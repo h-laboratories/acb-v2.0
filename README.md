@@ -3,7 +3,7 @@ This repo contains the firmware for the ACB v2.0.
 
 *The latest .bin for production firmware is in the release section on the right.*
 
-**When compiling in the Arduino IDE make sure to use the settings outlined in [#arduino-ide-settings](Arduino IDE Settings)**
+**When compiling in the Arduino IDE make sure to use the settings outlined in [Arduino IDE Settings](#arduino-ide-settings)**
 
 ## Example firmware
 There are also several firmware examples in the `/examples` dir. These examples are created using the Arduino IDE and can be programmed to the ACB v2.0 via one of two methods:
