@@ -11,3 +11,8 @@ There are also several firmware examples in the `/examples` dir. These examples 
 The debugger mount allows rapid debugging directly in the Arduino IDE instead of needing to boot the ACB into DFU mode.
 
 ## Arduino IDE Settings
+Make sure to install the STM32 & Simple FOC Libraries in the Arduino IDE. In the Tools menu select:
+1. Board > STM32 based boards > Generic STM32G4 series
+2. Board part number > Generic "G474RETX"
+3. USB Support > CDC (generic 'Serial' supersede U(S)ART)
+4. U(S)ART support > Disabled 

@@ -48,13 +48,13 @@ void IOSetup(){
 }
 
 void setup() {
-
+  IOSetup();
   // use monitoring with serial 
   Serial.begin(115200);
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
-
+  driver.pwm_frequency = 30000;
   // driver config
   // power supply voltage [V]
   driver.voltage_power_supply = 12;
