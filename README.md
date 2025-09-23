@@ -1,7 +1,5 @@
 # ACB v2.0 Firmware
-This repo contains the firmware for the ACB v2.0.
-
-*The latest .bin for production firmware is in the release section on the right.*
+This repo contains the firmware for the ACB v2.0. The latest .bin for production firmware is in the release section on the right.
 
 **When compiling in the Arduino IDE make sure to use the settings outlined in [Arduino IDE Settings](#arduino-ide-settings)**
 
