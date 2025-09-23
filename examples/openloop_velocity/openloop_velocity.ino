@@ -30,15 +30,8 @@
 #define SPI_CS_POS PB6
 
 // BLDC motor & driver instance
-// BLDCMotor motor = BLDCMotor(pole pair number);
-BLDCMotor motor = BLDCMotor(11);
-// BLDCDriver3PWM driver = BLDCDriver3PWM(pwmA, pwmB, pwmC, Enable(optional));
-BLDCDriver3PWM driver = BLDCDriver3PWM(9, 5, 6, 8);
-
-// Stepper motor & driver instance
-//StepperMotor motor = StepperMotor(50);
-//StepperDriver4PWM driver = StepperDriver4PWM(9, 5, 10, 6,  8);
-
+BLDCMotor motor = BLDCMotor(7);
+BLDCDriver6PWM driver = BLDCDriver6PWM(PWM_H_A, PWM_L_A, PWM_H_B, PWM_L_B, PWM_H_C, PWM_L_C);
 
 //target variable
 float target_velocity = 0;
@@ -47,6 +40,12 @@ float target_velocity = 0;
 Commander command = Commander(Serial);
 void doTarget(char* cmd) { command.scalar(&target_velocity, cmd); }
 void doLimit(char* cmd) { command.scalar(&motor.voltage_limit, cmd); }
+
+
+void IOSetup(){
+  // Configure IO not handled by SimpleFOC
+  pinMode(DRV_EN, OUTPUT);
+}
 
 void setup() {
 
@@ -74,10 +73,13 @@ void setup() {
   // limit the voltage to be set to the motor
   // start very low for high resistance motors
   // current = voltage / resistance, so try to be well under 1Amp
-  motor.voltage_limit = 3;   // [V]
+  motor.voltage_limit = 0.5;   // [V]
  
   // open loop control config
   motor.controller = MotionControlType::velocity_openloop;
+
+  // Enable the MOSFET driver
+  digitalWrite(DRV_EN, HIGH);
 
   // init motor hardware
   if(!motor.init()){
