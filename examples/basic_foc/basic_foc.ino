@@ -96,7 +96,7 @@ void setup() {
   // start very low for high resistance motors
   // current = voltage / resistance, so try to be well under 1Amp
   motor.voltage_limit = driver.voltage_limit/2;   // [V]
-  motor.voltage_sensor_align = 3;
+  motor.voltage_sensor_align = 1;
   motor.velocity_index_search = 5;
 
   // Default encoder settings
@@ -114,11 +114,11 @@ void setup() {
   // motor.LPF_current_d.Tf = 0.01f;
 
   motor.PID_velocity.P = .2;
-  motor.PID_velocity.I = 0;
+  motor.PID_velocity.I = 1;
   motor.PID_velocity.D = 0.0;
   motor.target = 20;
 
-  // motor.LPF_velocity.Tf = 0.01f;
+  motor.LPF_velocity.Tf = 0.05f;
 
   // motor.PID_velocity.output_ramp = 1000;
 
@@ -166,7 +166,7 @@ void setup() {
   // motor.LPF_velocity = 0.01;
   // motor.motion_downsample = 10;
   // motor.disable();
-  motor.move(10);
+  motor.move(100);
   
   digitalWrite(DRV_EN, LOW);
   _delay(10);
@@ -185,27 +185,5 @@ void loop() {
   // motor.move(10);
   motor.monitor();
   command.run();
-  // if(digitalRead(DRV_FAULT) == LOW){
-    // Serial.println("Driver fault");
-    // exit(1);
-  // }
-    // static unsigned long last_print = 0;
-  // unsigned long now = millis();
-  // if (now - last_print >= 10) {
-  //   Serial.print(encoder.getAngle());
-  //   Serial.print("\t");
-  //   Serial.println(encoder.getVelocity());
-  //   last_print = now;
-  // }
-  // static unsigned long last_print = 0;
-  // unsigned long now = millis();
-  // if (now - last_print >= 5) {
-  //   PhaseCurrent_s currents = current_sense.getPhaseCurrents();
-  //     Serial.print(currents.a*1000); // milli Amps
-  //     Serial.print("\t");
-  //     Serial.print(currents.b*1000); // milli Amps
-  //     Serial.print("\t");
-  //     Serial.println(currents.c*1000); // milli Amps
-  //     last_print = now;
-  //   }
+  
 }

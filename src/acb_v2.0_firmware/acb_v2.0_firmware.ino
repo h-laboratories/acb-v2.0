@@ -26,6 +26,106 @@ void doB(){encoder.handleB();}
 void doI(){encoder.handleIndex();}
 /* ENCODER END */
 
+
+/* IWDG (Independent Watchdog) Functions */
+
+/**
+ * Initialize the Independent Watchdog Timer (IWDG)
+ * This watchdog will reset the STM32 if not refreshed within the timeout period
+ */
+void initIWDG() {
+  // Enable IWDG clock (LSI oscillator should be enabled by default)
+  // LSI is typically 32kHz on STM32G474
+  
+  // Unlock IWDG registers
+  IWDG->KR = 0x5555;
+  
+  // Set prescaler (64 prescaler gives ~32kHz/64 = 500Hz)
+  IWDG->PR = 64;
+  
+  // Set reload value for 2 second timeout
+  IWDG->RLR = IWDG_RELOAD_VALUE;
+  
+  // Lock IWDG registers
+  IWDG->KR = 0x0000;
+  
+  // Start the watchdog
+  IWDG->KR = 0xCCCC;
+  
+  Serial.println("IWDG initialized - 2 second timeout");
+}
+
+/**
+ * Refresh the Independent Watchdog Timer
+ * This must be called regularly to prevent system reset
+ * If this function is not called within the timeout period (2 seconds),
+ * the STM32 will automatically reset, helping recover from software issues
+ */
+void refreshIWDG() {
+  IWDG->KR = 0xAAAA;  // Refresh watchdog counter
+}
+
+/**
+ * Test function to demonstrate IWDG functionality
+ * WARNING: This will cause a system reset after 2 seconds
+ * Only use for testing purposes
+ */
+void testIWDG() {
+  Serial.println("IWDG Test: System will reset in 2 seconds...");
+  Serial.println("Stopping watchdog refresh to trigger reset");
+  // Do not call refreshIWDG() in the main loop to test watchdog reset
+}
+
+/* FAULTS*/
+
+
+// HardFault handler (catches unhandled faults)
+void HardFault_Handler(void) {
+    // Read fault status registers for diagnosis
+    volatile uint32_t cfsr = SCB->CFSR;  // Configurable Fault Status Register
+    volatile uint32_t hfsr = SCB->HFSR;  // HardFault Status Register
+    volatile uint32_t mmfar = SCB->MMFAR;  // MemManage Fault Address (if applicable)
+    volatile uint32_t bfar = SCB->BFAR;    // BusFault Address (if applicable)
+    Serial.println("HARD FAULT");
+        NVIC_SystemReset();
+
+
+    // Optional: Toggle an LED or send via UART for indication
+    // e.g., HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);  // Assuming LED on PA5
+
+    NVIC_SystemReset();
+
+    // Infinite loop to halt (use debugger to inspect variables here)
+    while (1) {}
+}
+
+// Memory Management Fault (e.g., invalid memory access)
+void MemManage_Handler(void) {
+  Serial.println("MEM FAULT");
+      NVIC_SystemReset();
+
+    // Similar to above: Read SCB->CFSR for details (MMFSR bits)
+    while (1) {}
+}
+
+// Bus Fault (e.g., invalid address during load/store)
+void BusFault_Handler(void) {
+  Serial.println("BUS FAULT");
+      NVIC_SystemReset();
+
+    // Read SCB->CFSR (BFSR bits) and SCB->BFAR
+    while (1) {}
+}
+
+// Usage Fault (e.g., undefined instruction, divide by zero)
+void UsageFault_Handler(void) {
+    // Read SCB->CFSR (UFSR bits)
+        NVIC_SystemReset();
+
+    Serial.println("USAGE FAULT");
+    while (1) {}
+}
+
 /* BUTTON INTERRUPT */
 void buttonISR() {
   // Small delay to debounce the button
@@ -47,6 +147,11 @@ float board_temperature = 0.0f;
 float bus_voltage = 0.0f;
 float internal_temperature = 0.0f;
 
+/* CURRENT MONITORING VARIABLES */
+float current_a = 0.0f;
+float current_b = 0.0f;
+float current_c = 0.0f;
+
 
 void IOSetup(){
   pinMode(DRV_EN, OUTPUT);
@@ -64,14 +169,15 @@ void IOSetup(){
   // LED pins 
   pinMode(COM_LED, OUTPUT);
   pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, HIGH);
 
   // Board monitoring
   pinMode(BUS_V, INPUT);
   pinMode(TEMP, INPUT);
   
   // Button setup with interrupt
-  // pinMode(BUTTON, INPUT_PULLUP);
-  // attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, FALLING);
+  pinMode(BUTTON, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, FALLING);
   
   // Enable internal temperature sensor for STM32G474
   // ADC12_COMMON->CCR |= ADC_CCR_VSENSESEL;  // Enable temperature sensor
@@ -164,18 +270,29 @@ float calculateInternalTemperature() {
 
 void setup() {
   IOSetup();
-  digitalWrite(STATUS_LED, HIGH);
-  Serial.begin(SERIAL_BAUD_RATE);
   
+  // Initialize Independent Watchdog Timer (IWDG)
+  initIWDG();
+  
+  // Enable UsageFault, BusFault, and MemManage fault handlers
+  SCB->SHCSR |= SCB_SHCSR_USGFAULTENA_Msk | SCB_SHCSR_BUSFAULTENA_Msk | SCB_SHCSR_MEMFAULTENA_Msk;
+  
+  int c1 = 0;
+  int c2 = 1 / c1;
+
+
+  Serial.begin(SERIAL_BAUD_RATE);
   // Initialize SPI communication
-  initSPI();
+  // initSPI();
+  SimpleFOCDebug::enable(&Serial);
+
   
   // Initialize MA730GQ encoder
   spi_encoder.init();
   
   // Initialize DRV8323 driver
   drv8323.init();
-  
+
   // Calculate initial board temperature, bus voltage, and internal temperature
   board_temperature = calculateBoardTemperature();
   bus_voltage = calculateBusVoltage();
@@ -185,6 +302,7 @@ void setup() {
   
   // Update motor pole pairs from configuration
   motor.pole_pairs = acb_config.pole_pairs;
+  // driver.dead_zone = 0.03;
   
   // Initialize encoder
   encoder.quadrature = Quadrature::ON;
@@ -192,23 +310,28 @@ void setup() {
   
   encoder.enableInterrupts(doA, doB);
   motor.linkSensor(&encoder);
+
+  // current_sense.init();
   
   // Configure driver
   driver.voltage_power_supply = bus_voltage;
-  driver.voltage_limit = DEFAULT_VOLTAGE_LIMIT;
+  // driver.voltage_power_supply = 12;
+  driver.voltage_limit = 4;
+  driver.pwm_frequency = DEFAULT_PWM_FREQUENCY;
+
   if(!driver.init()){
     Serial.println("Driver init failed!");
     return;
   }
   
   // Link current sense
-  current_sense.linkDriver(&driver);
+  // current_sense.linkDriver(&driver);
   motor.linkDriver(&driver);
   
   // Configure motor limits
   motor.voltage_limit = driver.voltage_limit/2;
-  motor.voltage_sensor_align = 1;
-  motor.velocity_index_search = 10;
+  motor.voltage_sensor_align = 2;
+  motor.velocity_index_search = 5;
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
@@ -230,93 +353,78 @@ void setup() {
   motor.zero_electric_angle = acb_config.zero_electric_angle;
   motor.sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
 
-  digitalWrite(DRV_EN, HIGH);
-  delay(100);
+  
   // Initialize current sense
-  current_sense.init();
-  motor.linkCurrentSense(&current_sense);
+  // current_sense.init();
+  // motor.linkCurrentSense(&current_sense);
   delay(10);
   // Calibrate driver
   digitalWrite(DRV_CAL, HIGH);
   delay(1);
   digitalWrite(DRV_CAL, LOW);
   delay(10);
+  digitalWrite(DRV_EN, HIGH);
+  delay(100);
   
   // Initialize motor
   if(!motor.init()){
     Serial.println("Motor init failed!");
     return;
   }
-  delay(1000);
+  _delay(1000);
   
   motor.initFOC();
   
   // Disable and re-enable driver
-  digitalWrite(DRV_EN, LOW);
-  delay(10);
-  digitalWrite(DRV_EN, HIGH);
-  _delay(100);  
+  drv8323.resetFaults();
   
-  motor.disable();
   motor.controller = MotionControlType::velocity;
+  motor.torque_controller = TorqueControlType::voltage;
   motor.target = 0;
   motor.LPF_velocity = 0.05;
   motor.LPF_angle = 0.05;
+  motor.disable();
 
-
-
-
-    
-  // while(1){
-  //   if(digitalRead(DRV_FAULT)==LOW) 
-  //   Serial.println("FAULT");
-  
-  
-  // for (int i = 0; i<7; i++){
-  //   digitalWrite(DRV_EN, LOW);
-  //   delay(1);
-  //   digitalWrite(DRV_EN, HIGH);
-  //   delayMicroseconds(80);
-  //   digitalWrite(DRV_EN, LOW);
-  //   // _delay(1);
-  //   digitalWrite(DRV_EN, HIGH);  
-    
-  //   uint16_t drv_reg = drv8323.readRegister(i);
-  //   Serial.printf("Reg(0x0%u): %u\n", i,drv_reg);
-  //   delay(50);
-  // }
-  // delay(1000);
-  // }
-  
+  motor.LPF_current_d = 0.05;
+  motor.LPF_current_q = 0.05;
 
   Serial.println("ACB v2.0 Firmware Ready");
   Serial.println("Open-Actuator Protocol Active");
-  Serial.println("Commands: set_position, set_velocity, set_torque, get_position, get_velocity, get_torque, enable, disable, home, stop, cmd_mode, broadcast");
+  Serial.println("Commands: set_position, set_velocity, set_torque, get_position, get_velocity, get_torque, enable, disable, home, stop, reset_position, cmd_mode, get_full_state");
   Serial.println("PID Commands: get_velocity_pid, set_velocity_pid, get_angle_pid, set_angle_pid, get_current_pid, set_current_pid, save_config");
   Serial.println("Motion Commands: get_downsample, set_downsample");
   Serial.println("Motor Commands: get_pole_pairs, set_pole_pairs");
-  Serial.println("Monitoring Commands: get_temperature, get_bus_voltage, get_internal_temperature, drv8323_fault_check");
+  Serial.println("Monitoring Commands: get_temperature, get_bus_voltage, get_internal_temperature, get_current_a, get_current_b, get_current_c, drv8323_fault_check");
   Serial.println("Calibration Commands: recalibrate_sensors");
+  _delay(1000);
 }
 
 void loop() {
+  // Refresh Independent Watchdog Timer to prevent reset
+  refreshIWDG();
+  
   // Process serial commands
+  // float loop_start_time = micros();
   command_manager.process_serial_commands();
 
-  // Handle broadcast data transmission
-  command_manager.handle_broadcast_data();
-
   // Update board monitoring values
-  board_temperature = calculateBoardTemperature();
-  bus_voltage = calculateBusVoltage();
-  internal_temperature = calculateInternalTemperature();
+  // board_temperature = calculateBoardTemperature();
+  // bus_voltage = calculateBusVoltage();
+  // internal_temperature = calculateInternalTemperature();
+
+  // PhaseCurrent_s currents = current_sense.getPhaseCurrents();
+  // current_sense.getABCurrents(PhaseCurrent_s current);
+  // current_a = currents.a;
+  // current_b = currents.b;
+  // current_c = currents.c;
+  // current_a = current_sense.getDCCurrent();
   
   // Update driver power supply if bus voltage changes significantly
-  static float last_bus_voltage = bus_voltage;
-  if (abs(bus_voltage - last_bus_voltage) > 0.1f) {
-    driver.voltage_power_supply = bus_voltage;
-    last_bus_voltage = bus_voltage;
-  }
+  // static float last_bus_voltage = bus_voltage;
+  // if (abs(bus_voltage - last_bus_voltage) > 0.1f) {
+  //   driver.voltage_power_supply = bus_voltage;
+  //   last_bus_voltage = bus_voltage;
+  // }
   
   /* TODO: Handle driver faults */
   

@@ -70,16 +70,16 @@
 
 
 // Motor Configuration Constants
-#define MOTOR_POLE_PAIRS 7
-#define DEFAULT_POLE_PAIRS 7
+#define MOTOR_POLE_PAIRS 19
+#define DEFAULT_POLE_PAIRS 19
 
 // Current Sense Configuration
 #define SHUNT_RESISTANCE 0.003f  // Ohms
 #define CURRENT_GAIN 20.0f       // Current sense amplifier gain
 
 // Driver Configuration
-#define DEFAULT_PWM_FREQUENCY 25000
-#define DEFAULT_VOLTAGE_LIMIT 2.0f
+#define DEFAULT_PWM_FREQUENCY 20000
+#define DEFAULT_VOLTAGE_LIMIT 4
 
 // Serial Communication
 #define SERIAL_BAUD_RATE 115200
@@ -99,17 +99,22 @@
 
 // Default PID Values
 #define DEFAULT_VELOCITY_P 0.25f
-#define DEFAULT_VELOCITY_I 0.0f
+#define DEFAULT_VELOCITY_I 1.0f
 #define DEFAULT_VELOCITY_D 0.0f
 #define DEFAULT_ANGLE_P 1.0f
-#define DEFAULT_ANGLE_I 0.0f
+#define DEFAULT_ANGLE_I 1.0f
 #define DEFAULT_ANGLE_D 0.0f
 #define DEFAULT_CURRENT_P 0.5f
-#define DEFAULT_CURRENT_I 10.0f
+#define DEFAULT_CURRENT_I 0.1f
 #define DEFAULT_CURRENT_D 0.0f
 
 // EEPROM Storage Addresses
 #define EEPROM_CONFIG_START_ADDR 0
 #define EEPROM_CONFIG_MAGIC_NUMBER 0xACB2
+
+// IWDG (Independent Watchdog) Configuration
+#define IWDG_TIMEOUT_MS 2000  // 2 second timeout
+#define IWDG_PRESCALER IWDG_PRESCALER_64  // 64 prescaler for ~32kHz LSI
+#define IWDG_RELOAD_VALUE ((IWDG_TIMEOUT_MS * 32000) / (64 * 1000))  // Calculate reload value
 
 #endif // ACB_DEFINITIONS_H

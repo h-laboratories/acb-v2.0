@@ -16,3 +16,11 @@ Make sure to install the STM32 & Simple FOC Libraries in the Arduino IDE. In the
 2. Board part number > Generic "G474RETX"
 3. USB Support > CDC (generic 'Serial' supersede U(S)ART)
 4. U(S)ART support > Disabled 
+
+## TODO
+- [ ] Fix exception handling for higher voltages
+- [ ] Current filtering
+- [ ] Auto PID tuning
+- [ ] CAN port from STM IDE implementation
+- [ ] Allow PWM frequency updates
+- [ ] Warnings for high/low encoder sensing

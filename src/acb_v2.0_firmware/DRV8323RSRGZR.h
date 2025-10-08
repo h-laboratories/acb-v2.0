@@ -50,7 +50,9 @@ public:
      * Check for faults and print human-readable fault information
      * @return: true if any faults detected, false otherwise
      */
+
     bool checkFaults();
+    void resetFaults();
     static const uint8_t FAULT_STATUS_1 = 0x00;
     static const uint8_t VGS_STATUS_2 = 0x01;
     static const uint8_t DRIVER_CONTROL = 0x02;
