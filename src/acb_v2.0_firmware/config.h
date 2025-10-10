@@ -110,9 +110,13 @@
 #define DEFAULT_CURRENT_I 0.1f
 #define DEFAULT_CURRENT_D 0.001f
 
+// Default Angle Limits (in degrees)
+#define DEFAULT_MIN_ANGLE -180.0f
+#define DEFAULT_MAX_ANGLE 180.0f
+
 // EEPROM Storage Addresses
 #define EEPROM_CONFIG_START_ADDR 0
-#define EEPROM_CONFIG_MAGIC_NUMBER 0xACB2
+#define EEPROM_CONFIG_MAGIC_NUMBER 0xACB4
 
 // IWDG (Independent Watchdog) Configuration
 #define IWDG_TIMEOUT_MS 2000  // 2 second timeout

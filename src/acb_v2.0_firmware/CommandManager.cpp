@@ -137,6 +137,16 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_help();
     } else if (command == "get_version") {
         handle_get_version();
+    } else if (command == "get_min_angle") {
+        handle_get_min_angle();
+    } else if (command.startsWith("set_min_angle ")) {
+        float min_angle = command.substring(14).toFloat();
+        handle_set_min_angle(min_angle);
+    } else if (command == "get_max_angle") {
+        handle_get_max_angle();
+    } else if (command.startsWith("set_max_angle ")) {
+        float max_angle = command.substring(14).toFloat();
+        handle_set_max_angle(max_angle);
     }
 }
 
@@ -205,6 +215,18 @@ void CommandManager::parse_binary_command() {
             case 0xAF: // get_version
                 handle_get_version();
                 break;
+            case 0xB0: // get_min_angle
+                handle_get_min_angle();
+                break;
+            case 0xB1: // set_min_angle
+                handle_set_min_angle((float)arg);
+                break;
+            case 0xB2: // get_max_angle
+                handle_get_max_angle();
+                break;
+            case 0xB3: // set_max_angle
+                handle_set_max_angle((float)arg);
+                break;
         }
     }
 }
@@ -231,6 +253,20 @@ uint16_t CommandManager::float_to_q412(float value) {
 }
 
 void CommandManager::handle_set_position(float position) {
+    // Check if position is within allowed limits
+    if (position < acb_config.min_angle || position > acb_config.max_angle) {
+        if (command_mode == 1) {
+            Serial.print("set_position: Error - position (");
+            Serial.print(position);
+            Serial.print(") is outside allowed range [");
+            Serial.print(acb_config.min_angle);
+            Serial.print(", ");
+            Serial.print(acb_config.max_angle);
+            Serial.println("]");
+        }
+        return;
+    }
+    
     // Convert degrees to radians for motor control
     motor_->target = position * PI / 180.0f;
     motor_->controller = MotionControlType::angle;
@@ -842,6 +878,10 @@ void CommandManager::handle_help() {
         Serial.println("CONFIGURATION:");
         Serial.println("  get_pole_pairs             - Get motor pole pairs");
         Serial.println("  set_pole_pairs <pairs>     - Set motor pole pairs (1-50)");
+        Serial.println("  get_min_angle              - Get minimum allowed angle");
+        Serial.println("  set_min_angle <degrees>    - Set minimum allowed angle");
+        Serial.println("  get_max_angle              - Get maximum allowed angle");
+        Serial.println("  set_max_angle <degrees>    - Set maximum allowed angle");
         Serial.println("  get_downsample             - Get motion control downsample factor");
         Serial.println("  set_downsample <factor>    - Set motion control downsample factor");
         Serial.println("  save_config                - Save current configuration to EEPROM");
@@ -866,4 +906,72 @@ void CommandManager::handle_get_version() {
         Serial.print("get_version ");
         Serial.println(FIRMWARE_VERSION);
     } 
+}
+
+void CommandManager::handle_get_min_angle() {
+    if (command_mode == 1) {
+        Serial.print("get_min_angle ");
+        Serial.println(acb_config.min_angle);
+    } else if (command_mode == 2) {
+        // Send as raw float (4 bytes)
+        uint8_t* min_angle_bytes = (uint8_t*)&acb_config.min_angle;
+        for (int i = 0; i < 4; i++) {
+            Serial.write(min_angle_bytes[i]);
+        }
+    }
+}
+
+void CommandManager::handle_set_min_angle(float min_angle) {
+    // Validate that min_angle is less than max_angle
+    if (min_angle >= acb_config.max_angle) {
+        if (command_mode == 1) {
+            Serial.print("set_min_angle: Error - min_angle (");
+            Serial.print(min_angle);
+            Serial.print(") must be less than max_angle (");
+            Serial.print(acb_config.max_angle);
+            Serial.println(")");
+        }
+        return;
+    }
+    
+    acb_config.min_angle = min_angle;
+    
+    if (command_mode == 1) {
+        Serial.print("set_min_angle ");
+        Serial.println(acb_config.min_angle);
+    }
+}
+
+void CommandManager::handle_get_max_angle() {
+    if (command_mode == 1) {
+        Serial.print("get_max_angle ");
+        Serial.println(acb_config.max_angle);
+    } else if (command_mode == 2) {
+        // Send as raw float (4 bytes)
+        uint8_t* max_angle_bytes = (uint8_t*)&acb_config.max_angle;
+        for (int i = 0; i < 4; i++) {
+            Serial.write(max_angle_bytes[i]);
+        }
+    }
+}
+
+void CommandManager::handle_set_max_angle(float max_angle) {
+    // Validate that max_angle is greater than min_angle
+    if (max_angle <= acb_config.min_angle) {
+        if (command_mode == 1) {
+            Serial.print("set_max_angle: Error - max_angle (");
+            Serial.print(max_angle);
+            Serial.print(") must be greater than min_angle (");
+            Serial.print(acb_config.min_angle);
+            Serial.println(")");
+        }
+        return;
+    }
+    
+    acb_config.max_angle = max_angle;
+    
+    if (command_mode == 1) {
+        Serial.print("set_max_angle ");
+        Serial.println(acb_config.max_angle);
+    }
 }

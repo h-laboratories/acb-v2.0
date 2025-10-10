@@ -169,6 +169,39 @@ float calculateInternalTemperature() {
   return -1;
 }
 
+/**
+ * Check angle limits and switch to position mode if exceeded
+ * This function monitors the motor position when in velocity or torque mode
+ * and automatically switches to position mode at the nearest limit if exceeded
+ */
+void check_angle_limits() {
+  // Only check limits if motor is in velocity or torque mode
+  if (motor.controller != MotionControlType::velocity && 
+      motor.controller != MotionControlType::torque) {
+    return;
+  }
+  
+  // Get current position in degrees
+  float current_position = motor.shaft_angle * 180.0f / PI;
+  
+  // Check if position is outside limits
+  if (current_position < acb_config.min_angle) {
+    // Position is below minimum, switch to position mode at minimum
+    motor.target = acb_config.min_angle * PI / 180.0f;
+    motor.controller = MotionControlType::angle;
+    
+    Serial.print("set_position ");
+    Serial.println(acb_config.min_angle);
+  } else if (current_position > acb_config.max_angle) {
+    // Position is above maximum, switch to position mode at maximum
+    motor.target = acb_config.max_angle * PI / 180.0f;
+    motor.controller = MotionControlType::angle;
+    
+    Serial.print("set_position ");
+    Serial.println(acb_config.max_angle);
+  }
+}
+
 void setup() {
   _delay(1000);
   
@@ -288,6 +321,9 @@ void loop() {
   // Process serial commands
   // float loop_start_time = micros();
   command_manager.process_serial_commands();
+
+  // Check angle limits and switch to position mode if exceeded
+  check_angle_limits();
 
   // Update board monitoring values
   board_temperature = calculateBoardTemperature();
