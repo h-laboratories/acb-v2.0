@@ -8,6 +8,23 @@ void MA730GQ::init() {
     // Set CS pin high initially (SPI must be initialized separately)
     pinMode(_cs_pin, OUTPUT);
     digitalWrite(_cs_pin, HIGH);
+
+    // Sets the Low/High sensitivity for the magnet
+    writeRegister(
+        0x06,
+        (0b00000000 << 5) | (0b00000111 << 2)
+    );
+    // Sets the filter window (factory default = 119)
+    writeRegister(
+        0x0E,
+        85
+    );
+    // Sets hysteresis (factory default = 156)
+    writeRegister(
+        0x10,
+        156
+    );
+
 }
 
 uint16_t MA730GQ::readAngle() {
@@ -94,4 +111,5 @@ float MA730GQ::getAngleRadians() {
 float MA730GQ::getAngleDegrees() {
     return getAngleRadians() * 180.0 / PI;
 }
+
 

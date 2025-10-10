@@ -4,11 +4,12 @@
 #include <Arduino.h>
 #include <SimpleFOC.h>
 #include "config_manager.h"
+#include "MA730GQ.h"
 
 class CommandManager {
 public:
     // Constructor
-    CommandManager(BLDCMotor* motor);
+    CommandManager(BLDCMotor* motor, MA730GQ* encoder);
     
     // Main command processing function
     void process_serial_commands();
@@ -48,6 +49,8 @@ public:
     void handle_get_current_b();
     void handle_get_current_c();
     void handle_get_full_state();
+    void handle_get_encoder_mag_status();
+    void handle_reset_config_defaults();
     
     // Utility functions
     float q88_to_float(uint16_t q88);
@@ -60,7 +63,7 @@ public:
 
 private:
     BLDCMotor* motor_;
-    
+    MA730GQ* encoder_;
     // Private command parsing functions
     void parse_human_readable_command(String command);
     void parse_binary_command();
