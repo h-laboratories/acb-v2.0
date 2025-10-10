@@ -131,6 +131,8 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_get_encoder_mag_status();
     } else if (command == "reset_config_defaults") {
         handle_reset_config_defaults();
+    } else if (command == "reset") {
+        handle_reset();
     }
 }
 
@@ -189,6 +191,9 @@ void CommandManager::parse_binary_command() {
                 break;
             case 0xAC: // reset_config_defaults
                 handle_reset_config_defaults();
+                break;
+            case 0xAD: // reset
+                handle_reset();
                 break;
         }
     }
@@ -775,4 +780,16 @@ void CommandManager::handle_reset_config_defaults() {
     if (command_mode == 1) {
         Serial.println("reset_config_defaults: Configuration reset to defaults and applied to motor");
     }
+}
+
+void CommandManager::handle_reset() {
+    if (command_mode == 1) {
+        Serial.println("reset: Performing complete STM32G4 system reset...");
+    }
+    
+    // Give a brief moment for the message to be sent
+    delay(100);
+    
+    // Perform complete system reset using NVIC_SystemReset()
+    NVIC_SystemReset();
 }
