@@ -279,13 +279,8 @@ void setup() {
   motor.disable();
 
   Serial.println("ACB v2.0 Firmware Ready");
-  Serial.println("Open-Actuator Protocol Active");
-  Serial.println("Commands: set_position, set_velocity, set_torque, get_position, get_velocity, get_torque, enable, disable, home, stop, reset_position, cmd_mode, get_full_state");
-  Serial.println("PID Commands: get_velocity_pid, set_velocity_pid, get_angle_pid, set_angle_pid, get_current_pid, set_current_pid, save_config, reset_config_defaults");
-  Serial.println("Motion Commands: get_downsample, set_downsample");
-  Serial.println("Motor Commands: get_pole_pairs, set_pole_pairs");
-  Serial.println("Monitoring Commands: get_temperature, get_bus_voltage, get_internal_temperature, get_current_a, get_current_b, get_current_c, drv8323_fault_check");
-  Serial.println("Calibration Commands: recalibrate_sensors");
+  Serial.println("Open-Actuator Protocol Active, enter help for commands.");
+ 
   _delay(1000);
 }
 

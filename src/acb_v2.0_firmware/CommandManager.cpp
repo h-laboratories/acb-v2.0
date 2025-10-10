@@ -133,6 +133,10 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_reset_config_defaults();
     } else if (command == "reset") {
         handle_reset();
+    } else if (command == "help") {
+        handle_help();
+    } else if (command == "get_version") {
+        handle_get_version();
     }
 }
 
@@ -194,6 +198,12 @@ void CommandManager::parse_binary_command() {
                 break;
             case 0xAD: // reset
                 handle_reset();
+                break;
+            case 0xAE: // help
+                handle_help();
+                break;
+            case 0xAF: // get_version
+                handle_get_version();
                 break;
         }
     }
@@ -792,4 +802,68 @@ void CommandManager::handle_reset() {
     
     // Perform complete system reset using NVIC_SystemReset()
     NVIC_SystemReset();
+}
+
+void CommandManager::handle_help() {
+    if (command_mode == 1) {
+        Serial.println("=== ACB v2.0 Command Help ===");
+        Serial.println();
+        Serial.println("MOTOR CONTROL:");
+        Serial.println("  set_position <degrees>     - Set target position in degrees");
+        Serial.println("  set_velocity <deg/sec>     - Set target velocity in degrees/second");
+        Serial.println("  set_torque <amperes>       - Set target torque in amperes");
+        Serial.println("  get_position               - Get current position in degrees");
+        Serial.println("  get_velocity               - Get current velocity in degrees/second");
+        Serial.println("  get_torque                 - Get current torque in amperes");
+        Serial.println("  enable                     - Enable motor");
+        Serial.println("  disable                    - Disable motor");
+        Serial.println("  home                       - Move to home position (0 degrees)");
+        Serial.println("  stop                       - Hold current position");
+        Serial.println("  reset_position             - Reset position reference to current position");
+        Serial.println();
+        Serial.println("PID CONTROL:");
+        Serial.println("  get_velocity_pid           - Get velocity PID parameters");
+        Serial.println("  set_velocity_pid <p> <i> <d> - Set velocity PID parameters");
+        Serial.println("  get_angle_pid              - Get angle PID parameters");
+        Serial.println("  set_angle_pid <p> <i> <d>  - Set angle PID parameters");
+        Serial.println("  get_current_pid            - Get current PID parameters");
+        Serial.println("  set_current_pid <p> <i> <d> - Set current PID parameters");
+        Serial.println();
+        Serial.println("SYSTEM STATUS:");
+        Serial.println("  get_full_state             - Get complete system state");
+        Serial.println("  get_temperature            - Get board temperature");
+        Serial.println("  get_bus_voltage            - Get bus voltage");
+        Serial.println("  get_internal_temperature   - Get internal temperature");
+        Serial.println("  get_current_a              - Get phase A current");
+        Serial.println("  get_current_b              - Get phase B current");
+        Serial.println("  get_current_c              - Get phase C current");
+        Serial.println("  get_encoder_mag_status     - Get encoder magnetic field status");
+        Serial.println();
+        Serial.println("CONFIGURATION:");
+        Serial.println("  get_pole_pairs             - Get motor pole pairs");
+        Serial.println("  set_pole_pairs <pairs>     - Set motor pole pairs (1-50)");
+        Serial.println("  get_downsample             - Get motion control downsample factor");
+        Serial.println("  set_downsample <factor>    - Set motion control downsample factor");
+        Serial.println("  save_config                - Save current configuration to EEPROM");
+        Serial.println("  reset_config_defaults      - Reset configuration to defaults");
+        Serial.println();
+        Serial.println("CALIBRATION & DIAGNOSTICS:");
+        Serial.println("  recalibrate_sensors        - Recalibrate motor sensors");
+        Serial.println("  drv8323_fault_check        - Check DRV8323 driver faults");
+        Serial.println();
+        Serial.println("SYSTEM CONTROL:");
+        Serial.println("  get_version                - Get firmware version");
+        Serial.println("  reset                      - Perform complete system reset");
+        Serial.println("  help                       - Show this help message");
+        Serial.println();
+        Serial.println();
+        Serial.println("=== End Help ===");
+    }
+}
+
+void CommandManager::handle_get_version() {
+    if (command_mode == 1) {
+        Serial.print("get_version ");
+        Serial.println(FIRMWARE_VERSION);
+    } 
 }

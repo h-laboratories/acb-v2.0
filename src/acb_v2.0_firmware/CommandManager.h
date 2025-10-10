@@ -52,6 +52,8 @@ public:
     void handle_get_encoder_mag_status();
     void handle_reset_config_defaults();
     void handle_reset();
+    void handle_help();
+    void handle_get_version();
     
     // Utility functions
     float q88_to_float(uint16_t q88);

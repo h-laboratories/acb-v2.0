@@ -2,6 +2,8 @@
 #ifndef ACB_DEFINITIONS_H
 #define ACB_DEFINITIONS_H
 
+// Firmware Version
+#define FIRMWARE_VERSION "1.0.1"
 // ACB v2.0 Pin Definitions
 // This file contains all pin definitions and constants for the ACB v2.0 motor controller
 
@@ -116,5 +118,7 @@
 #define IWDG_TIMEOUT_MS 2000  // 2 second timeout
 #define IWDG_PRESCALER IWDG_PRESCALER_64  // 64 prescaler for ~32kHz LSI
 #define IWDG_RELOAD_VALUE ((IWDG_TIMEOUT_MS * 32000) / (64 * 1000))  // Calculate reload value
+
+
 
 #endif // ACB_DEFINITIONS_H
