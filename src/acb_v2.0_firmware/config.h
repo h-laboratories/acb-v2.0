@@ -82,7 +82,7 @@
 #define DEFAULT_VOLTAGE_LIMIT 4
 
 // Serial Communication
-#define SERIAL_BAUD_RATE 115200
+#define SERIAL_BAUD_RATE 2000000
 #define DEBUG_SERIAL_BAUD_RATE 2000000
 
 // Timing Constants
@@ -94,19 +94,19 @@
 #define DEFAULT_CONTROLLER MotionControlType::velocity
 
 // Default Target Values
-#define DEFAULT_TARGET_VELOCITY 40.0f
+#define DEFAULT_TARGET_VELOCITY 0.0f
 #define DEFAULT_VOLTAGE_LIMIT_FACTOR 0.5f
 
 // Default PID Values
 #define DEFAULT_VELOCITY_P 0.25f
 #define DEFAULT_VELOCITY_I 1.0f
-#define DEFAULT_VELOCITY_D 0.0f
-#define DEFAULT_ANGLE_P 1.0f
+#define DEFAULT_VELOCITY_D 0.001f
+#define DEFAULT_ANGLE_P 20.0f
 #define DEFAULT_ANGLE_I 1.0f
 #define DEFAULT_ANGLE_D 0.0f
-#define DEFAULT_CURRENT_P 0.5f
+#define DEFAULT_CURRENT_P 1.0f
 #define DEFAULT_CURRENT_I 0.1f
-#define DEFAULT_CURRENT_D 0.0f
+#define DEFAULT_CURRENT_D 0.001f
 
 // EEPROM Storage Addresses
 #define EEPROM_CONFIG_START_ADDR 0

@@ -1,8 +1,9 @@
 #include "CommandManager.h"
 #include "DRV8323RSRGZR.h"
+#include <SimpleFOC.h>
 
-CommandManager::CommandManager(BLDCMotor* motor)
-    : motor_(motor), command_mode(1) {
+CommandManager::CommandManager(BLDCMotor* motor, MA730GQ* encoder)
+    : motor_(motor), encoder_(encoder), command_mode(1) {
 }
 
 void CommandManager::process_serial_commands() {
@@ -126,6 +127,10 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_get_current_b();
     } else if (command == "get_current_c") {
         handle_get_current_c();
+    } else if (command == "get_encoder_mag_status") {
+        handle_get_encoder_mag_status();
+    } else if (command == "reset_config_defaults") {
+        handle_reset_config_defaults();
     }
 }
 
@@ -181,6 +186,9 @@ void CommandManager::parse_binary_command() {
                 break;
             case 0xAB: // cmd_mode
                 handle_cmd_mode((int)arg);
+                break;
+            case 0xAC: // reset_config_defaults
+                handle_reset_config_defaults();
                 break;
         }
     }
@@ -488,28 +496,29 @@ void CommandManager::handle_recalibrate_sensors() {
     if (command_mode == 1) {
         Serial.println("recalibrate_sensors: Starting sensor recalibration...");
     }
-    
+    SimpleFOCDebug::enable(&Serial);
     
     // Disable motor during calibration
+
     motor_->disable();
     delay(100);
-    
+    motor_->current_sense->skip_align = true;
     // Perform sensor alignment similar to initFOC
     // This will determine the zero electric angle and sensor direction
     motor_->voltage_sensor_align = 2;
-    motor_->velocity_index_search = 10;
+    motor_->velocity_index_search = 5;
   
     motor_->sensor_direction = Direction::UNKNOWN;  // Start with default direction
-    motor_->zero_electric_angle = 0.0f;  // Reset to default
+    motor_->zero_electric_angle = NOT_SET;  // Reset to default
     
     // Enable motor for calibration
     motor_->enable();
-    delay(100);
+    delay(1000);
     
     // Perform the calibration by calling initFOC
     // This will automatically determine the correct zero electric angle and sensor direction
     motor_->initFOC();
-    
+        
     // Store the calibration values in config (but don't save to EEPROM yet)
     acb_config.zero_electric_angle = motor_->zero_electric_angle;
     acb_config.sensor_direction = (motor_->sensor_direction == Direction::CW) ? 1 : -1;
@@ -535,6 +544,7 @@ void CommandManager::handle_recalibrate_sensors() {
         
         Serial.println("recalibrate_sensors: Use 'save_config' command to save calibration to EEPROM.");
     }
+    motor_->disable();
 }
 
 void CommandManager::handle_drv8323_fault_check() {
@@ -713,5 +723,56 @@ void CommandManager::handle_get_full_state() {
         for (int i = 0; i < 4; i++) {
             Serial.write(current_c_bytes[i]);
         }
+    }
+}
+
+void CommandManager::handle_get_encoder_mag_status() {    
+    if (command_mode == 1) {
+        uint8_t mag_status = encoder_->readRegister(27);
+
+        Serial.print("get_encoder_mag_status ");
+        Serial.print((mag_status >> 7) & 0x01);
+        Serial.print(" ");
+        Serial.print((mag_status >> 6) & 0x01);
+        Serial.print(" ");
+        Serial.print(!(((mag_status >> 2) & 0x01)) | ((((mag_status >> 3) & 0x01))));
+        Serial.println();
+    }
+}
+
+void CommandManager::handle_reset_config_defaults() {
+    if (command_mode == 1) {
+        Serial.println("reset_config_defaults: Resetting configuration to defaults...");
+    }
+    
+    // Reset configuration to defaults
+    resetConfig();
+    
+    // Apply the reset configuration to the motor
+    motor_->PID_velocity.P = acb_config.velocity_p;
+    motor_->PID_velocity.I = acb_config.velocity_i;
+    motor_->PID_velocity.D = acb_config.velocity_d;
+    
+    motor_->P_angle.P = acb_config.angle_p;
+    motor_->P_angle.I = acb_config.angle_i;
+    motor_->P_angle.D = acb_config.angle_d;
+    
+    motor_->PID_current_q.P = acb_config.current_p;
+    motor_->PID_current_q.I = acb_config.current_i;
+    motor_->PID_current_q.D = acb_config.current_d;
+    
+    motor_->PID_current_d.P = acb_config.current_p;
+    motor_->PID_current_d.I = acb_config.current_i;
+    motor_->PID_current_d.D = acb_config.current_d;
+    
+    // Apply sensor calibration values
+    motor_->zero_electric_angle = acb_config.zero_electric_angle;
+    motor_->sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
+    
+    // Apply motor configuration
+    motor_->pole_pairs = acb_config.pole_pairs;
+    
+    if (command_mode == 1) {
+        Serial.println("reset_config_defaults: Configuration reset to defaults and applied to motor");
     }
 }

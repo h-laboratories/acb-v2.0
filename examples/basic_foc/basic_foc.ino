@@ -77,7 +77,7 @@ void setup() {
   // driver.pwm_frequency = 20000;
   // driver config
   // power supply voltage [V]
-  driver.voltage_power_supply = 12;
+  driver.voltage_power_supply = 18;
   driver.pwm_frequency = 20000;
   // limit the maximal dc voltage the driver can set
   // as a protection measure for the low-resistance motors

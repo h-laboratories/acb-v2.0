@@ -51,6 +51,7 @@ bool loadConfig() {
   }
   
   Serial.println("Configuration loaded from EEPROM");
+  printConfig();
   return true;
 }
 

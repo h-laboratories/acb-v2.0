@@ -27,105 +27,6 @@ void doI(){encoder.handleIndex();}
 /* ENCODER END */
 
 
-/* IWDG (Independent Watchdog) Functions */
-
-/**
- * Initialize the Independent Watchdog Timer (IWDG)
- * This watchdog will reset the STM32 if not refreshed within the timeout period
- */
-void initIWDG() {
-  // Enable IWDG clock (LSI oscillator should be enabled by default)
-  // LSI is typically 32kHz on STM32G474
-  
-  // Unlock IWDG registers
-  IWDG->KR = 0x5555;
-  
-  // Set prescaler (64 prescaler gives ~32kHz/64 = 500Hz)
-  IWDG->PR = 64;
-  
-  // Set reload value for 2 second timeout
-  IWDG->RLR = IWDG_RELOAD_VALUE;
-  
-  // Lock IWDG registers
-  IWDG->KR = 0x0000;
-  
-  // Start the watchdog
-  IWDG->KR = 0xCCCC;
-  
-  Serial.println("IWDG initialized - 2 second timeout");
-}
-
-/**
- * Refresh the Independent Watchdog Timer
- * This must be called regularly to prevent system reset
- * If this function is not called within the timeout period (2 seconds),
- * the STM32 will automatically reset, helping recover from software issues
- */
-void refreshIWDG() {
-  IWDG->KR = 0xAAAA;  // Refresh watchdog counter
-}
-
-/**
- * Test function to demonstrate IWDG functionality
- * WARNING: This will cause a system reset after 2 seconds
- * Only use for testing purposes
- */
-void testIWDG() {
-  Serial.println("IWDG Test: System will reset in 2 seconds...");
-  Serial.println("Stopping watchdog refresh to trigger reset");
-  // Do not call refreshIWDG() in the main loop to test watchdog reset
-}
-
-/* FAULTS*/
-
-
-// HardFault handler (catches unhandled faults)
-void HardFault_Handler(void) {
-    // Read fault status registers for diagnosis
-    volatile uint32_t cfsr = SCB->CFSR;  // Configurable Fault Status Register
-    volatile uint32_t hfsr = SCB->HFSR;  // HardFault Status Register
-    volatile uint32_t mmfar = SCB->MMFAR;  // MemManage Fault Address (if applicable)
-    volatile uint32_t bfar = SCB->BFAR;    // BusFault Address (if applicable)
-    Serial.println("HARD FAULT");
-        NVIC_SystemReset();
-
-
-    // Optional: Toggle an LED or send via UART for indication
-    // e.g., HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);  // Assuming LED on PA5
-
-    NVIC_SystemReset();
-
-    // Infinite loop to halt (use debugger to inspect variables here)
-    while (1) {}
-}
-
-// Memory Management Fault (e.g., invalid memory access)
-void MemManage_Handler(void) {
-  Serial.println("MEM FAULT");
-      NVIC_SystemReset();
-
-    // Similar to above: Read SCB->CFSR for details (MMFSR bits)
-    while (1) {}
-}
-
-// Bus Fault (e.g., invalid address during load/store)
-void BusFault_Handler(void) {
-  Serial.println("BUS FAULT");
-      NVIC_SystemReset();
-
-    // Read SCB->CFSR (BFSR bits) and SCB->BFAR
-    while (1) {}
-}
-
-// Usage Fault (e.g., undefined instruction, divide by zero)
-void UsageFault_Handler(void) {
-    // Read SCB->CFSR (UFSR bits)
-        NVIC_SystemReset();
-
-    Serial.println("USAGE FAULT");
-    while (1) {}
-}
-
 /* BUTTON INTERRUPT */
 void buttonISR() {
   // Small delay to debounce the button
@@ -140,7 +41,7 @@ void buttonISR() {
 /* BUTTON END */
 
 /* COMMAND MANAGER */
-CommandManager command_manager(&motor);
+CommandManager command_manager(&motor, &spi_encoder);
 
 /* BOARD MONITORING VARIABLES */
 float board_temperature = 0.0f;
@@ -269,40 +170,30 @@ float calculateInternalTemperature() {
 }
 
 void setup() {
-  IOSetup();
+  _delay(1000);
   
-  // Initialize Independent Watchdog Timer (IWDG)
-  initIWDG();
-  
-  // Enable UsageFault, BusFault, and MemManage fault handlers
-  SCB->SHCSR |= SCB_SHCSR_USGFAULTENA_Msk | SCB_SHCSR_BUSFAULTENA_Msk | SCB_SHCSR_MEMFAULTENA_Msk;
-  
-  int c1 = 0;
-  int c2 = 1 / c1;
-
-
   Serial.begin(SERIAL_BAUD_RATE);
-  // Initialize SPI communication
-  // initSPI();
-  SimpleFOCDebug::enable(&Serial);
+  
+  // Setups + loads
+  initSPI();
+  IOSetup();
+  loadConfig();
 
-  
-  // Initialize MA730GQ encoder
   spi_encoder.init();
-  
-  // Initialize DRV8323 driver
   drv8323.init();
 
-  // Calculate initial board temperature, bus voltage, and internal temperature
   board_temperature = calculateBoardTemperature();
   bus_voltage = calculateBusVoltage();
   internal_temperature = calculateInternalTemperature();
-  // Load configuration from EEPROM
-  loadConfig();
-  
-  // Update motor pole pairs from configuration
-  motor.pole_pairs = acb_config.pole_pairs;
-  // driver.dead_zone = 0.03;
+
+  if (bus_voltage > 30 || bus_voltage < 12){
+    Serial.print("ACBv2.0 limited to 30V. (Detected ");
+    Serial.print(bus_voltage,2);
+    Serial.println("v)");
+    Serial.println("Please use an input voltage to 12v-30v");
+    exit(1);
+  }
+    
   
   // Initialize encoder
   encoder.quadrature = Quadrature::ON;
@@ -310,12 +201,9 @@ void setup() {
   
   encoder.enableInterrupts(doA, doB);
   motor.linkSensor(&encoder);
-
-  // current_sense.init();
   
   // Configure driver
   driver.voltage_power_supply = bus_voltage;
-  // driver.voltage_power_supply = 12;
   driver.voltage_limit = 4;
   driver.pwm_frequency = DEFAULT_PWM_FREQUENCY;
 
@@ -325,17 +213,27 @@ void setup() {
   }
   
   // Link current sense
-  // current_sense.linkDriver(&driver);
+  current_sense.linkDriver(&driver);
   motor.linkDriver(&driver);
   
-  // Configure motor limits
+  // Configure motor
   motor.voltage_limit = driver.voltage_limit/2;
-  motor.voltage_sensor_align = 2;
+  motor.voltage_sensor_align = 1;
   motor.velocity_index_search = 5;
+  motor.pole_pairs = acb_config.pole_pairs;
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
+  motor.torque_controller = TorqueControlType::foc_current;
+  motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
+  motor.LPF_velocity = 0.05;
+  motor.LPF_angle = 0.05;
+  motor.LPF_current_d = 0.005;
+  motor.LPF_current_q = 0.005;
+
+  motor.target = 0;  
+
   // Apply PID settings from configuration
   motor.PID_velocity.P = acb_config.velocity_p;
   motor.PID_velocity.I = acb_config.velocity_i;
@@ -348,29 +246,29 @@ void setup() {
   motor.PID_current_q.P = acb_config.current_p;
   motor.PID_current_q.I = acb_config.current_i;
   motor.PID_current_q.D = acb_config.current_d;
-  
+    
+  motor.PID_current_d.P = acb_config.current_p;
+  motor.PID_current_d.I = acb_config.current_i;
+  motor.PID_current_d.D = acb_config.current_d;
+
   // Apply sensor calibration values from configuration
   motor.zero_electric_angle = acb_config.zero_electric_angle;
   motor.sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
 
-  
-  // Initialize current sense
-  // current_sense.init();
-  // motor.linkCurrentSense(&current_sense);
-  delay(10);
   // Calibrate driver
-  digitalWrite(DRV_CAL, HIGH);
-  delay(1);
-  digitalWrite(DRV_CAL, LOW);
-  delay(10);
   digitalWrite(DRV_EN, HIGH);
-  delay(100);
+  delay(10);
+  digitalWrite(DRV_CAL, HIGH);
+  delayMicroseconds(100);
+  digitalWrite(DRV_CAL, LOW);
   
   // Initialize motor
   if(!motor.init()){
     Serial.println("Motor init failed!");
     return;
   }
+  current_sense.init();
+  motor.linkCurrentSense(&current_sense);
   _delay(1000);
   
   motor.initFOC();
@@ -378,20 +276,12 @@ void setup() {
   // Disable and re-enable driver
   drv8323.resetFaults();
   
-  motor.controller = MotionControlType::velocity;
-  motor.torque_controller = TorqueControlType::voltage;
-  motor.target = 0;
-  motor.LPF_velocity = 0.05;
-  motor.LPF_angle = 0.05;
   motor.disable();
-
-  motor.LPF_current_d = 0.05;
-  motor.LPF_current_q = 0.05;
 
   Serial.println("ACB v2.0 Firmware Ready");
   Serial.println("Open-Actuator Protocol Active");
   Serial.println("Commands: set_position, set_velocity, set_torque, get_position, get_velocity, get_torque, enable, disable, home, stop, reset_position, cmd_mode, get_full_state");
-  Serial.println("PID Commands: get_velocity_pid, set_velocity_pid, get_angle_pid, set_angle_pid, get_current_pid, set_current_pid, save_config");
+  Serial.println("PID Commands: get_velocity_pid, set_velocity_pid, get_angle_pid, set_angle_pid, get_current_pid, set_current_pid, save_config, reset_config_defaults");
   Serial.println("Motion Commands: get_downsample, set_downsample");
   Serial.println("Motor Commands: get_pole_pairs, set_pole_pairs");
   Serial.println("Monitoring Commands: get_temperature, get_bus_voltage, get_internal_temperature, get_current_a, get_current_b, get_current_c, drv8323_fault_check");
@@ -399,32 +289,22 @@ void setup() {
   _delay(1000);
 }
 
-void loop() {
-  // Refresh Independent Watchdog Timer to prevent reset
-  refreshIWDG();
-  
+void loop() {  
   // Process serial commands
   // float loop_start_time = micros();
   command_manager.process_serial_commands();
 
   // Update board monitoring values
-  // board_temperature = calculateBoardTemperature();
-  // bus_voltage = calculateBusVoltage();
-  // internal_temperature = calculateInternalTemperature();
-
-  // PhaseCurrent_s currents = current_sense.getPhaseCurrents();
-  // current_sense.getABCurrents(PhaseCurrent_s current);
-  // current_a = currents.a;
-  // current_b = currents.b;
-  // current_c = currents.c;
-  // current_a = current_sense.getDCCurrent();
+  board_temperature = calculateBoardTemperature();
+  bus_voltage = calculateBusVoltage();
+  internal_temperature = calculateInternalTemperature();
   
   // Update driver power supply if bus voltage changes significantly
-  // static float last_bus_voltage = bus_voltage;
-  // if (abs(bus_voltage - last_bus_voltage) > 0.1f) {
-  //   driver.voltage_power_supply = bus_voltage;
-  //   last_bus_voltage = bus_voltage;
-  // }
+  static float last_bus_voltage = bus_voltage;
+  if (abs(bus_voltage - last_bus_voltage) > 0.1f) {
+    driver.voltage_power_supply = bus_voltage;
+    last_bus_voltage = bus_voltage;
+  }
   
   /* TODO: Handle driver faults */
   
