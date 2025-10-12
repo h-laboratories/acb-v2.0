@@ -315,9 +315,7 @@ void setup() {
   float zero_electric_calibrated = acb_config.zero_electric_angle-((current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
   zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
   
-  if (zero_electric_calibrated > 2*PI) {
-    zero_electric_calibrated -= 2*PI;
-  }else if(zero_electric_calibrated < 0) {
+  if(zero_electric_calibrated < 0) {
     zero_electric_calibrated += 2*PI;
   }
   motor.zero_electric_angle = zero_electric_calibrated;
