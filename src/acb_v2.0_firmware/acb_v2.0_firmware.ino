@@ -69,16 +69,7 @@ void IOSetup(){
   pinMode(BUS_V, INPUT);
   pinMode(TEMP, INPUT);
   
-  // Button setup with interrupt
-  // pinMode(BUTTON, INPUT_PULLUP);
-  // attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, FALLING);
-  
-  // Enable internal temperature sensor for STM32G474
-  // ADC12_COMMON->CCR |= ADC_CCR_VSENSESEL;  // Enable temperature sensor
   delay(10);  // Allow sensor to stabilize
-  
-  // Note: STM32G474 has 12-bit ADC, but analogRead() may be configured for 10-bit
-  // If readings are still zero, check ADC resolution configuration
 }
 
 /**
@@ -231,7 +222,6 @@ void setup() {
   motor.sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
 
   digitalWrite(DRV_EN, HIGH);
-  delay(100);
   // Initialize current sense
   current_sense.init();
   motor.linkCurrentSense(&current_sense);
@@ -247,7 +237,7 @@ void setup() {
     Serial.println("Motor init failed!");
     return;
   }
-  delay(1000);
+  delay(10);
   
   motor.initFOC();
   
@@ -262,32 +252,6 @@ void setup() {
   motor.target = 0;
   motor.LPF_velocity = 0.05;
   motor.LPF_angle = 0.05;
-
-
-
-
-    
-  // while(1){
-  //   if(digitalRead(DRV_FAULT)==LOW) 
-  //   Serial.println("FAULT");
-  
-  
-  // for (int i = 0; i<7; i++){
-  //   digitalWrite(DRV_EN, LOW);
-  //   delay(1);
-  //   digitalWrite(DRV_EN, HIGH);
-  //   delayMicroseconds(80);
-  //   digitalWrite(DRV_EN, LOW);
-  //   // _delay(1);
-  //   digitalWrite(DRV_EN, HIGH);  
-    
-  //   uint16_t drv_reg = drv8323.readRegister(i);
-  //   Serial.printf("Reg(0x0%u): %u\n", i,drv_reg);
-  //   delay(50);
-  // }
-  // delay(1000);
-  // }
-  
 
   Serial.println("ACB v2.0 Firmware Ready");
   Serial.println("Open-Actuator Protocol Active");
