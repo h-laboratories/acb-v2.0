@@ -58,6 +58,8 @@ public:
     void handle_set_min_angle(float min_angle);
     void handle_get_max_angle();
     void handle_set_max_angle(float max_angle);
+    void handle_get_absolute_angle_calibration();
+    void handle_set_absolute_angle_calibration(float abs_angle);
     
     // Utility functions
     float q88_to_float(uint16_t q88);

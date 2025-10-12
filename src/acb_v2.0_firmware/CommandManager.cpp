@@ -1,6 +1,7 @@
 #include "CommandManager.h"
 #include "DRV8323RSRGZR.h"
 #include <SimpleFOC.h>
+#include <math.h>
 
 CommandManager::CommandManager(BLDCMotor* motor, MA730GQ* encoder)
     : motor_(motor), encoder_(encoder), command_mode(1) {
@@ -147,6 +148,11 @@ void CommandManager::parse_human_readable_command(String command) {
     } else if (command.startsWith("set_max_angle ")) {
         float max_angle = command.substring(14).toFloat();
         handle_set_max_angle(max_angle);
+    } else if (command == "get_absolute_angle_calibration") {
+        handle_get_absolute_angle_calibration();
+    } else if (command.startsWith("set_absolute_angle_calibration ")) {
+        float abs_angle = command.substring(31).toFloat();
+        handle_set_absolute_angle_calibration(abs_angle);
     }
 }
 
@@ -226,6 +232,12 @@ void CommandManager::parse_binary_command() {
                 break;
             case 0xB3: // set_max_angle
                 handle_set_max_angle((float)arg);
+                break;
+            case 0xB4: // get_absolute_angle_calibration
+                handle_get_absolute_angle_calibration();
+                break;
+            case 0xB5: // set_absolute_angle_calibration
+                handle_set_absolute_angle_calibration((float)arg);
                 break;
         }
     }
@@ -571,9 +583,13 @@ void CommandManager::handle_recalibrate_sensors() {
     motor_->initFOC();
         
     // Store the calibration values in config (but don't save to EEPROM yet)
-    acb_config.zero_electric_angle = motor_->zero_electric_angle;
+    // Electric angle = (PP * mechanical angle) + offset
+    
+    // acb_config.zero_electric_angle = motor_->zero_electric_angle;
     acb_config.sensor_direction = (motor_->sensor_direction == Direction::CW) ? 1 : -1;
     
+
+
     if (command_mode == 1) {
         Serial.print("recalibrate_sensors: Calibration complete. Zero electric angle: ");
         Serial.print(acb_config.zero_electric_angle, 4);
@@ -595,6 +611,24 @@ void CommandManager::handle_recalibrate_sensors() {
         
         Serial.println("recalibrate_sensors: Use 'save_config' command to save calibration to EEPROM.");
     }
+
+    
+    float absolute_angle_zero_calibration = encoder_->getAngleRadians();
+    float relative_mechanical_position = motor_->sensor->getMechanicalAngle();
+    relative_mechanical_position = fmod(relative_mechanical_position, 2*PI);
+    float actual_zero_angle = fmod(((absolute_angle_zero_calibration-relative_mechanical_position) * acb_config.pole_pairs) + motor_->zero_electric_angle, 2*PI);
+    
+    if (actual_zero_angle < 0) {
+        actual_zero_angle += 2*PI;
+    }
+    Serial.print("Calculated a real zero angle: ");
+    Serial.println(actual_zero_angle);
+
+    Serial.print("Motor angle zero calibration: ");
+    Serial.println(motor_->zero_electric_angle);
+    // Save absolute angle in config to correct zero angle on startup
+    acb_config.zero_electric_angle = actual_zero_angle;
+
     motor_->disable();
 }
 
@@ -882,6 +916,8 @@ void CommandManager::handle_help() {
         Serial.println("  set_min_angle <degrees>    - Set minimum allowed angle");
         Serial.println("  get_max_angle              - Get maximum allowed angle");
         Serial.println("  set_max_angle <degrees>    - Set maximum allowed angle");
+        Serial.println("  get_absolute_angle_calibration - Get absolute angle calibration value");
+        Serial.println("  set_absolute_angle_calibration <radians> - Set absolute angle calibration value");
         Serial.println("  get_downsample             - Get motion control downsample factor");
         Serial.println("  set_downsample <factor>    - Set motion control downsample factor");
         Serial.println("  save_config                - Save current configuration to EEPROM");
@@ -973,5 +1009,27 @@ void CommandManager::handle_set_max_angle(float max_angle) {
     if (command_mode == 1) {
         Serial.print("set_max_angle ");
         Serial.println(acb_config.max_angle);
+    }
+}
+
+void CommandManager::handle_get_absolute_angle_calibration() {
+    if (command_mode == 1) {
+        Serial.print("get_absolute_angle_calibration ");
+        Serial.println(acb_config.absolute_angle_zero_calibration);
+    } else if (command_mode == 2) {
+        // Send as raw float (4 bytes)
+        uint8_t* abs_angle_bytes = (uint8_t*)&acb_config.absolute_angle_zero_calibration;
+        for (int i = 0; i < 4; i++) {
+            Serial.write(abs_angle_bytes[i]);
+        }
+    }
+}
+
+void CommandManager::handle_set_absolute_angle_calibration(float abs_angle) {
+    acb_config.absolute_angle_zero_calibration = abs_angle;
+    
+    if (command_mode == 1) {
+        Serial.print("set_absolute_angle_calibration ");
+        Serial.println(acb_config.absolute_angle_zero_calibration);
     }
 }

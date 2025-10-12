@@ -257,7 +257,7 @@ void setup() {
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
-  motor.torque_controller = TorqueControlType::foc_current;
+  // motor.torque_controller = TorqueControlType::foc_current;
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
   motor.LPF_velocity = 0.05;
@@ -285,7 +285,6 @@ void setup() {
   motor.PID_current_d.D = acb_config.current_d;
 
   // Apply sensor calibration values from configuration
-  motor.zero_electric_angle = acb_config.zero_electric_angle;
   motor.sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
 
   // Calibrate driver
@@ -301,10 +300,32 @@ void setup() {
     return;
   }
   current_sense.init();
+  current_sense.skip_align = true; // This stops sstartup movement, but the encoder.update() in theory should be fine if align enabled.
   motor.linkCurrentSense(&current_sense);
-  _delay(1000);
-  
+
   motor.initFOC();
+  
+  // Apply absolute angle correction
+  // Electrical angle = (pole_pairs * mechanical angle) + offset  
+  float current_absolute_angle = spi_encoder.getAngleRadians();
+  encoder.update(); // This is to handle any movement during startup
+  float current_relative_angle = encoder.getMechanicalAngle();
+  
+  
+  float zero_electric_calibrated = acb_config.zero_electric_angle-((current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
+  zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
+  
+  if (zero_electric_calibrated > 2*PI) {
+    zero_electric_calibrated -= 2*PI;
+  }else if(zero_electric_calibrated < 0) {
+    zero_electric_calibrated += 2*PI;
+  }
+  motor.zero_electric_angle = zero_electric_calibrated;
+
+  Serial.print("Applied absolute angle calibration correction: ");
+  Serial.print(motor.zero_electric_angle);
+  Serial.println(" rad");
+
   
   // Disable and re-enable driver
   drv8323.resetFaults();

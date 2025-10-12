@@ -31,6 +31,9 @@ void initConfig() {
   acb_config.min_angle = DEFAULT_MIN_ANGLE;
   acb_config.max_angle = DEFAULT_MAX_ANGLE;
   
+  // Absolute Angle Calibration defaults
+  acb_config.absolute_angle_zero_calibration = 0.0f;  // Default to 0
+  
   // Add more default values here as needed
   // Example:
   // acb_config.motor_voltage_limit = DEFAULT_VOLTAGE_LIMIT;
@@ -114,6 +117,9 @@ void printConfig() {
   Serial.print(acb_config.min_angle);
   Serial.print(", Max=");
   Serial.println(acb_config.max_angle);
+  
+  Serial.print("Absolute Angle Zero Calibration: ");
+  Serial.println(acb_config.absolute_angle_zero_calibration);
   
   // Add more configuration printing here as needed
 }
