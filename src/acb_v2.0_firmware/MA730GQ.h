@@ -72,6 +72,7 @@ public:
      * @return: Current angle in degrees
      */
     float getAngleDegrees();
+    
 
 private:
     uint8_t _cs_pin;
