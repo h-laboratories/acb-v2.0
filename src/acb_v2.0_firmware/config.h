@@ -64,6 +64,12 @@
 #define SPI_CS_DRV PB5
 #define SPI_CS_POS PB6
 
+// CAN Pin Definitions
+#define CAN_RX PB12
+#define CAN_TX PB13
+#define CAN_RATE 1000000
+
+
 // MA730GQ Encoder Configuration
 #define MA730GQ_CS_PIN SPI_CS_POS  // Use the same CS pin as defined for SPI_CS_POS
 

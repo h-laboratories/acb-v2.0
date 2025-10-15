@@ -1,3 +1,5 @@
+#include "hal_conf_extra.h"
+
 #include "config.h"
 #include "config_manager.h"
 #include "MA730GQ.h"
@@ -5,7 +7,9 @@
 #include "CommandManager.h"
 #include <SimpleFOC.h>
 #include <SPI.h>
+#include "stm32g4xx_hal_fdcan.h"
 
+extern "C" void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan);
 BLDCMotor motor = BLDCMotor(MOTOR_POLE_PAIRS);  // Will be updated from config after loadConfig()
 
 BLDCDriver6PWM driver = BLDCDriver6PWM(PWM_H_A, PWM_L_A, PWM_H_B, PWM_L_B, PWM_H_C, PWM_L_C);
@@ -25,6 +29,20 @@ void doA(){encoder.handleA();}
 void doB(){encoder.handleB();}
 void doI(){encoder.handleIndex();}
 /* ENCODER END */
+
+// CAN message data
+const uint32_t CAN_MESSAGE_ID = 0x123;
+const uint8_t CAN_DATA[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+// CAN reception variables
+FDCAN_RxHeaderTypeDef RxHeader;
+uint8_t RxData[8];
+uint32_t last_can_receive_time = 0;
+uint32_t can_receive_count = 0;
+/* USER CODE END PV */
+
+// CAN
+FDCAN_HandleTypeDef hfdcan2;
 
 
 /* BUTTON INTERRUPT */
@@ -53,6 +71,10 @@ float current_a = 0.0f;
 float current_b = 0.0f;
 float current_c = 0.0f;
 
+/* CAN MESSAGE TIMING VARIABLES */
+unsigned long last_can_message_time = 0;
+const unsigned long CAN_MESSAGE_INTERVAL = 1000; // 1 second in milliseconds
+
 
 void IOSetup(){
   pinMode(DRV_EN, OUTPUT);
@@ -75,6 +97,9 @@ void IOSetup(){
   // Board monitoring
   pinMode(BUS_V, INPUT);
   pinMode(TEMP, INPUT);
+
+  // pinMode(CAN_RX, INPUT);
+  // pinMode(CAN_TX, OUTPUT);
   
   // Button setup with interrupt
   pinMode(BUTTON, INPUT_PULLUP);
@@ -197,6 +222,124 @@ void check_angle_limits() {
   }
 }
 
+
+// // CAN
+void initCAN(){
+
+  hfdcan2.Instance = FDCAN2;
+  hfdcan2.Init.ClockDivider = FDCAN_CLOCK_DIV1;
+  hfdcan2.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
+  hfdcan2.Init.Mode = FDCAN_MODE_NORMAL;
+  hfdcan2.Init.AutoRetransmission = DISABLE;
+  hfdcan2.Init.TransmitPause = DISABLE;
+  hfdcan2.Init.ProtocolException = DISABLE;
+  hfdcan2.Init.NominalPrescaler = 160;
+  hfdcan2.Init.NominalSyncJumpWidth = 1;
+  hfdcan2.Init.NominalTimeSeg1 = 2;
+  hfdcan2.Init.NominalTimeSeg2 = 2;
+  hfdcan2.Init.DataPrescaler = 1;
+  hfdcan2.Init.DataSyncJumpWidth = 1;
+  hfdcan2.Init.DataTimeSeg1 = 1;
+  hfdcan2.Init.DataTimeSeg2 = 1;
+  hfdcan2.Init.StdFiltersNbr = 0;
+  hfdcan2.Init.ExtFiltersNbr = 0;
+  hfdcan2.Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
+
+  if (HAL_FDCAN_Init(&hfdcan2) != HAL_OK)
+  {
+    Serial.println("Failed to init CAN");
+    Error_Handler();
+  }
+
+  GPIO_InitTypeDef GPIO_InitStruct = {};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {};
+  HAL_RCCEx_GetPeriphCLKConfig(&PeriphClkInit);
+
+  PeriphClkInit.PeriphClockSelection |= RCC_PERIPHCLK_FDCAN;
+  PeriphClkInit.FdcanClockSelection = RCC_FDCANCLKSOURCE_PCLK1;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Serial.println("Failed to init CAN clock");
+    Error_Handler();
+    
+  }
+  __HAL_RCC_FDCAN_CLK_ENABLE();
+
+  // __HAL_RCC_GPIOB_CLK_ENABLE();
+  /**FDCAN2 GPIO Configuration
+  PB12     ------> FDCAN2_RX
+  PB13     ------> FDCAN2_TX
+  */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN2;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN2;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  if (HAL_FDCAN_Start(&hfdcan2) != HAL_OK) {
+    Serial.println("Failed to start CAN");
+    Error_Handler();
+  }
+}
+/**
+ * @brief Send CAN message over FDCAN2
+ * @retval HAL_StatusTypeDef HAL_OK if successful, otherwise error code
+ */
+HAL_StatusTypeDef SendCANMessage(void)
+{
+  FDCAN_TxHeaderTypeDef TxHeader;
+  uint8_t TxData[8];
+  
+  // Configure message header
+  TxHeader.Identifier = CAN_MESSAGE_ID;
+  TxHeader.IdType = FDCAN_STANDARD_ID;
+  TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+  TxHeader.DataLength = FDCAN_DLC_BYTES_8;
+  TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+  TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+  TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  TxHeader.MessageMarker = 0;
+  
+  // Copy data
+  for (int i = 0; i < 8; i++) {
+    TxData[i] = CAN_DATA[i];
+  }
+  // Serial.println("Sending CAN message");
+  // Send the message
+  return HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan2, &TxHeader, TxData);
+}
+
+/**
+ * @brief Receive CAN message from FDCAN2
+ * @retval HAL_StatusTypeDef HAL_OK if message received, HAL_ERROR if no message, otherwise error code
+ */
+HAL_StatusTypeDef ReceiveCANMessage(void)
+{
+  HAL_StatusTypeDef status = HAL_FDCAN_GetRxMessage(&hfdcan2, FDCAN_RX_FIFO0, &RxHeader, RxData);
+  
+  if (status == HAL_OK) {
+    // Message received successfully
+    can_receive_count++;
+    last_can_receive_time = HAL_GetTick();
+    
+    // Optional: Process received message here
+    // You can add your message processing logic here
+    // For example: check message ID, process data, etc.
+  }
+  
+  return status;
+}
+/* USER CODE END 0 */
+
 void setup() {
   _delay(1000);
   
@@ -208,6 +351,12 @@ void setup() {
   initSPI();
   IOSetup();
   loadConfig();
+
+  // initCAN();
+  // Setup CAN
+  // can_bus.begin(true);
+  // can_bus.setBaudRate(CAN_RATE);
+
 
   spi_encoder.init();
   drv8323.init();
@@ -254,8 +403,8 @@ void setup() {
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
-  motor.torque_controller = TorqueControlType::foc_current;
-  motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
+  // motor.torque_controller = TorqueControlType::foc_current;
+  // motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
   motor.LPF_velocity = 0.05;
   motor.LPF_angle = 0.05;
@@ -297,12 +446,11 @@ void setup() {
     return;
   }
   delay(10);
-  
-  current_sense.init();
   current_sense.skip_align = true; // This stops sstartup movement, but the encoder.update() in theory should be fine if align enabled.
+  current_sense.init();
+  
   motor.linkCurrentSense(&current_sense);
 
-  motor.initFOC();
   
   // Apply absolute angle correction
   // Electrical angle = (pole_pairs * mechanical angle) + offset  
@@ -322,6 +470,9 @@ void setup() {
     zero_electric_calibrated += 2*PI;
   }
   motor.zero_electric_angle = zero_electric_calibrated;
+  
+  motor.initFOC();
+
   
   // Disable and re-enable driver
   drv8323.resetFaults();
@@ -355,6 +506,29 @@ void loop() {
   }
   
   /* TODO: Handle driver faults */
+  
+  // Send CAN message every second
+  // unsigned long current_time = millis();
+  // if (current_time - last_can_message_time >= CAN_MESSAGE_INTERVAL) {
+  //   if(SendCANMessage() == HAL_OK) {
+      
+  //   }
+  //     last_can_message_time = current_time;
+  // }
+  //   CAN_message_t can_msg;
+  //   can_msg.id = 0x00;
+  //   can_msg.len = 8;
+  //   can_msg.buf[0] = 0x00;
+  //   can_msg.buf[1] = 0x11;
+  //   can_msg.buf[2] = 0x22;
+  //   can_msg.buf[3] = 0x33;
+  //   can_msg.buf[4] = 0x44;
+  //   can_msg.buf[5] = 0x55;
+  //   can_msg.buf[6] = 0x66;
+  //   can_msg.buf[7] = 0x77;
+  //   can_bus.write(can_msg);
+  
+  // }
   
   motor.loopFOC();
   motor.move();
