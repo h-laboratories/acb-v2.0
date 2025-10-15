@@ -555,14 +555,9 @@ void CommandManager::handle_get_internal_temperature() {
     }
 }
 
-void CommandManager::handle_recalibrate_sensors() {
-    if (command_mode == 1) {
-        Serial.println("recalibrate_sensors: Starting sensor recalibration...");
-    }
-    SimpleFOCDebug::enable(&Serial);
+void CommandManager::handle_recalibrate_sensors() {    
     
     // Disable motor during calibration
-
     motor_->disable();
     delay(100);
     motor_->current_sense->skip_align = true;
@@ -591,25 +586,10 @@ void CommandManager::handle_recalibrate_sensors() {
 
 
     if (command_mode == 1) {
-        Serial.print("recalibrate_sensors: Calibration complete. Zero electric angle: ");
+        Serial.print("recalibrate_sensors ");
         Serial.print(acb_config.zero_electric_angle, 4);
-        Serial.print(", Sensor direction: ");
+        Serial.print(" ");
         Serial.println(acb_config.sensor_direction);
-        
-        // Print pole pairs and encoder rotation information
-        Serial.print("recalibrate_sensors: Motor pole pairs: ");
-        Serial.println(MOTOR_POLE_PAIRS);
-        
-        Serial.print("recalibrate_sensors: Encoder rotation direction: ");
-        if (motor_->sensor_direction == Direction::CW) {
-            Serial.println("Clockwise (CW)");
-        } else if (motor_->sensor_direction == Direction::CCW) {
-            Serial.println("Counter-Clockwise (CCW)");
-        } else {
-            Serial.println("Unknown");
-        }
-        
-        Serial.println("recalibrate_sensors: Use 'save_config' command to save calibration to EEPROM.");
     }
 
     

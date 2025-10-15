@@ -2,15 +2,9 @@
 #include "DRV8323RSRGZR.h"
 #include "config.h"
 
-DRV8323RSRGZR::DRV8323RSRGZR(uint8_t cs_pin) : _cs_pin(cs_pin) {
-    // Initialize driver
-}
+DRV8323RSRGZR::DRV8323RSRGZR(uint8_t cs_pin) : _cs_pin(cs_pin) {}
 
-void DRV8323RSRGZR::init() {
-    // Set CS pin high initially (SPI must be initialized separately)
-    // pinMode(_cs_pin, OUTPUT);
-    // digitalWrite(_cs_pin, HIGH);
-}
+void DRV8323RSRGZR::init() {}
 
 void DRV8323RSRGZR::resetFaults(){
     digitalWrite(DRV_EN, LOW);
@@ -29,8 +23,6 @@ uint16_t DRV8323RSRGZR::readRegister(uint8_t reg_address) {
     uint16_t read_cmd = 0x8000 | ((reg_address & 0x0F) << 11);
     read_cmd = 0x0000 | ((reg_address & 0x0F) << 11);
     uint16_t response = SPI.transfer16(read_cmd);
-    // uint8_t res_1 = SPI.transfer(read_cmd >> 8);
-    // uint8_t res_2 = SPI.transfer(read_cmd & 0xFF);
 
     // uint16_t response = (uint16_t)(res_1 << 8) | res_2;
     // Pull CS high to end communication

@@ -80,12 +80,7 @@ void IOSetup(){
   pinMode(BUTTON, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, FALLING);
   
-  // Enable internal temperature sensor for STM32G474
-  // ADC12_COMMON->CCR |= ADC_CCR_VSENSESEL;  // Enable temperature sensor
   delay(10);  // Allow sensor to stabilize
-  
-  // Note: STM32G474 has 12-bit ADC, but analogRead() may be configured for 10-bit
-  // If readings are still zero, check ADC resolution configuration
 }
 
 /**
@@ -289,6 +284,9 @@ void setup() {
 
   // Calibrate driver
   digitalWrite(DRV_EN, HIGH);
+  // Initialize current sense
+  current_sense.init();
+  motor.linkCurrentSense(&current_sense);
   delay(10);
   digitalWrite(DRV_CAL, HIGH);
   delayMicroseconds(100);
@@ -299,6 +297,8 @@ void setup() {
     Serial.println("Motor init failed!");
     return;
   }
+  delay(10);
+  
   current_sense.init();
   current_sense.skip_align = true; // This stops sstartup movement, but the encoder.update() in theory should be fine if align enabled.
   motor.linkCurrentSense(&current_sense);
@@ -311,6 +311,10 @@ void setup() {
   encoder.update(); // This is to handle any movement during startup
   float current_relative_angle = encoder.getMechanicalAngle();
   
+  motor.controller = MotionControlType::velocity;
+  motor.target = 0;
+  motor.LPF_velocity = 0.05;
+  motor.LPF_angle = 0.05;
   
   float zero_electric_calibrated = acb_config.zero_electric_angle-((current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
   zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
