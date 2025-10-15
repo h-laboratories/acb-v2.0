@@ -153,6 +153,18 @@ void CommandManager::parse_human_readable_command(String command) {
     } else if (command.startsWith("set_absolute_angle_calibration ")) {
         float abs_angle = command.substring(31).toFloat();
         handle_set_absolute_angle_calibration(abs_angle);
+    } else if (command == "get_torque_controller") {
+        handle_get_torque_controller();
+    } else if (command.startsWith("set_torque_controller ")) {
+        int controller_type = command.substring(21).toInt();
+        handle_set_torque_controller(controller_type);
+    } else if (command == "get_foc_modulation") {
+        handle_get_foc_modulation();
+    } else if (command.startsWith("set_foc_modulation ")) {
+        int modulation_type = command.substring(19).toInt();
+        handle_set_foc_modulation(modulation_type);
+    }else{
+        Serial.println("unknown");
     }
 }
 
@@ -563,8 +575,8 @@ void CommandManager::handle_recalibrate_sensors() {
     motor_->current_sense->skip_align = true;
     // Perform sensor alignment similar to initFOC
     // This will determine the zero electric angle and sensor direction
-    motor_->voltage_sensor_align = 2;
-    motor_->velocity_index_search = 5;
+    motor_->voltage_sensor_align = 1;
+    motor_->velocity_index_search = 10;
   
     motor_->sensor_direction = Direction::UNKNOWN;  // Start with default direction
     motor_->zero_electric_angle = NOT_SET;  // Reset to default
@@ -583,8 +595,6 @@ void CommandManager::handle_recalibrate_sensors() {
     // acb_config.zero_electric_angle = motor_->zero_electric_angle;
     acb_config.sensor_direction = (motor_->sensor_direction == Direction::CW) ? 1 : -1;
     
-
-
     if (command_mode == 1) {
         Serial.print("recalibrate_sensors ");
         Serial.print(acb_config.zero_electric_angle, 4);
@@ -601,11 +611,6 @@ void CommandManager::handle_recalibrate_sensors() {
     if (actual_zero_angle < 0) {
         actual_zero_angle += 2*PI;
     }
-    Serial.print("Calculated a real zero angle: ");
-    Serial.println(actual_zero_angle);
-
-    Serial.print("Motor angle zero calibration: ");
-    Serial.println(motor_->zero_electric_angle);
     // Save absolute angle in config to correct zero angle on startup
     acb_config.zero_electric_angle = actual_zero_angle;
 
@@ -898,6 +903,10 @@ void CommandManager::handle_help() {
         Serial.println("  set_max_angle <degrees>    - Set maximum allowed angle");
         Serial.println("  get_absolute_angle_calibration - Get absolute angle calibration value");
         Serial.println("  set_absolute_angle_calibration <radians> - Set absolute angle calibration value");
+        Serial.println("  get_torque_controller      - Get torque controller type (0=voltage, 1=dc_current, 2=foc_current)");
+        Serial.println("  set_torque_controller <type> - Set torque controller type (0-2)");
+        Serial.println("  get_foc_modulation         - Get FOC modulation type (0=sine_pwm, 1=space_vector_pwm, 2=trapezoid_120, 3=trapezoid_150)");
+        Serial.println("  set_foc_modulation <type>  - Set FOC modulation type (0-3)");
         Serial.println("  get_downsample             - Get motion control downsample factor");
         Serial.println("  set_downsample <factor>    - Set motion control downsample factor");
         Serial.println("  save_config                - Save current configuration to EEPROM");
@@ -1011,5 +1020,57 @@ void CommandManager::handle_set_absolute_angle_calibration(float abs_angle) {
     if (command_mode == 1) {
         Serial.print("set_absolute_angle_calibration ");
         Serial.println(acb_config.absolute_angle_zero_calibration);
+    }
+}
+
+void CommandManager::handle_get_torque_controller() {
+    if (command_mode == 1) {
+        Serial.print("get_torque_controller ");
+        Serial.println((int)motor_->torque_controller);
+    }
+}
+
+void CommandManager::handle_set_torque_controller(int controller_type) {
+    // Validate controller type
+    if (controller_type < 0 || controller_type > 2) {
+        if (command_mode == 1) {
+            Serial.print("set_torque_controller: Invalid controller type. Must be 0-2. Received: ");
+            Serial.println(controller_type);
+        }
+        return;
+    }
+    
+    // Set the torque controller type
+    motor_->torque_controller = (TorqueControlType)controller_type;
+    
+    if (command_mode == 1) {
+        Serial.print("set_torque_controller ");
+        Serial.println((int)motor_->torque_controller);
+    }
+}
+
+void CommandManager::handle_get_foc_modulation() {
+    if (command_mode == 1) {
+        Serial.print("get_foc_modulation ");
+        Serial.println((int)motor_->foc_modulation);
+    }
+}
+
+void CommandManager::handle_set_foc_modulation(int modulation_type) {
+    // Validate modulation type
+    if (modulation_type < 0 || modulation_type > 3) {
+        if (command_mode == 1) {
+            Serial.print("set_foc_modulation: Invalid modulation type. Must be 0-3. Received: ");
+            Serial.println(modulation_type);
+        }
+        return;
+    }
+    
+    // Set the FOC modulation type
+    motor_->foc_modulation = (FOCModulationType)modulation_type;
+    
+    if (command_mode == 1) {
+        Serial.print("set_foc_modulation ");
+        Serial.println((int)motor_->foc_modulation);
     }
 }

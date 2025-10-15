@@ -51,14 +51,14 @@ bool loadConfig() {
   
   // Check if magic number matches (valid data)
   if (acb_config.magic_number != EEPROM_CONFIG_MAGIC_NUMBER) {
-    Serial.println("No valid config found, using defaults");
+    // Serial.println("No valid config found, using defaults");
     initConfig();
     saveConfig();
     return false;
   }
   
-  Serial.println("Configuration loaded from EEPROM");
-  printConfig();
+  // Serial.println("Configuration loaded from EEPROM");
+  // printConfig();
   return true;
 }
 

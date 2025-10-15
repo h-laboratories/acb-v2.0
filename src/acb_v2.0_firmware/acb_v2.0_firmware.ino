@@ -201,6 +201,8 @@ void setup() {
   _delay(1000);
   
   Serial.begin(SERIAL_BAUD_RATE);
+  _delay(10);
+  Serial.println("---------- ACB BOOTING ----------");
   
   // Setups + loads
   initSPI();
@@ -214,7 +216,7 @@ void setup() {
   bus_voltage = calculateBusVoltage();
   internal_temperature = calculateInternalTemperature();
 
-  if (bus_voltage > 30 || bus_voltage < 12){
+  if (bus_voltage > 30 || bus_voltage < 11.5){
     Serial.print("ACBv2.0 limited to 30V. (Detected ");
     Serial.print(bus_voltage,2);
     Serial.println("v)");
@@ -252,13 +254,13 @@ void setup() {
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
-  // motor.torque_controller = TorqueControlType::foc_current;
+  motor.torque_controller = TorqueControlType::foc_current;
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
   motor.LPF_velocity = 0.05;
   motor.LPF_angle = 0.05;
-  motor.LPF_current_d = 0.005;
-  motor.LPF_current_q = 0.005;
+  motor.LPF_current_d = 0.05;
+  motor.LPF_current_q = 0.05;
 
   motor.target = 0;  
 
@@ -284,9 +286,6 @@ void setup() {
 
   // Calibrate driver
   digitalWrite(DRV_EN, HIGH);
-  // Initialize current sense
-  current_sense.init();
-  motor.linkCurrentSense(&current_sense);
   delay(10);
   digitalWrite(DRV_CAL, HIGH);
   delayMicroseconds(100);
@@ -323,11 +322,6 @@ void setup() {
     zero_electric_calibrated += 2*PI;
   }
   motor.zero_electric_angle = zero_electric_calibrated;
-
-  Serial.print("Applied absolute angle calibration correction: ");
-  Serial.print(motor.zero_electric_angle);
-  Serial.println(" rad");
-
   
   // Disable and re-enable driver
   drv8323.resetFaults();

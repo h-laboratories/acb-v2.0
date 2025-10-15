@@ -60,6 +60,10 @@ public:
     void handle_set_max_angle(float max_angle);
     void handle_get_absolute_angle_calibration();
     void handle_set_absolute_angle_calibration(float abs_angle);
+    void handle_get_torque_controller();
+    void handle_set_torque_controller(int controller_type);
+    void handle_get_foc_modulation();
+    void handle_set_foc_modulation(int modulation_type);
     
     // Utility functions
     float q88_to_float(uint16_t q88);
