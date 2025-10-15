@@ -34,16 +34,12 @@
 BLDCMotor motor = BLDCMotor(19);
 BLDCDriver6PWM driver = BLDCDriver6PWM(PWM_H_A, PWM_L_A, PWM_H_B, PWM_L_B, PWM_H_C, PWM_L_C);
 LowsideCurrentSense current_sense = LowsideCurrentSense(0.003, 20.0*16, CURR_A, CURR_B, CURR_C);
-Encoder encoder = Encoder(ENCODER_A, ENCODER_B, 1024); 
+// Encoder encoder = Encoder(ENCODER_A, ENCODER_B, 1024); 
 
-void doA(){encoder.handleA();}
-void doB(){encoder.handleB();}
-void doI(){encoder.handleIndex();}
+// void doA(){encoder.handleA();}
+// void doB(){encoder.handleB();}
+// void doI(){encoder.handleIndex();}
 
-// instantiate the commander
-// Commander command = Commander(Serial);
-// void doTarget(char* cmd) { command.scalar(&target_velocity, cmd); }
-// void doLimit(char* cmd) { command.scalar(&motor.voltage_limit, cmd); }
 float target = 0;
 
 Commander command = Commander(Serial);
@@ -51,6 +47,16 @@ void doMotor(char* cmd) { command.motor(&motor, cmd); }
 void doTarget(char* cmd) { command.scalar(&target, cmd); }
 
 
+void initSPI() {
+  SPI.setMISO(SPI_MISO);
+  SPI.setMOSI(SPI_MOSI);
+  SPI.setSCLK(SPI_SCK);
+
+  SPI.begin();
+  SPI.setBitOrder(MSBFIRST);
+  SPI.setDataMode(SPI_MODE0);
+  SPI.setClockDivider(SPI_CLOCK_DIV128);  
+}
 
 
 void IOSetup(){
@@ -58,20 +64,103 @@ void IOSetup(){
   pinMode(DRV_EN, OUTPUT);
   pinMode(DRV_CAL, OUTPUT);
   pinMode(DRV_FAULT, INPUT);
+  // Configure SPI CS pins
+  pinMode(SPI_CS_POS, OUTPUT);
+  // Set CS pins high initially
+  digitalWrite(SPI_CS_POS, HIGH);
+
 }
+
+uint8_t readRegister(uint8_t addr){
+  uint8_t result = 0;
+  uint16_t buff = 0;
+  
+  digitalWrite(SPI_CS_POS, LOW);
+  delayMicroseconds(1);
+
+  uint16_t read_request = 0x4000 | ((addr & 0x1F) << 8);
+  SPI.transfer16(read_request);
+  digitalWrite(SPI_CS_POS, HIGH);
+
+  delayMicroseconds(1);
+  digitalWrite(SPI_CS_POS, LOW);
+  
+  delayMicroseconds(1);
+  buff = SPI.transfer16(0x0000);
+  buff = (buff >> 8) & 0xFF;
+  result = buff;
+  
+  // Pull CS high to end communication
+  digitalWrite(SPI_CS_POS, HIGH);
+  delayMicroseconds(1); // Small delay for hold time
+  
+  return result;
+}
+
+uint8_t writeRegister(uint8_t addr, uint8_t data){
+  // Pull CS low to start communication
+    digitalWrite(SPI_CS_POS, LOW);
+    delayMicroseconds(1); // Small delay for setup time
+    
+    // Frame 1: Send write request
+    // Bits 15-13: Write command (100)
+    // Bits 12-8: 5-bit register address
+    // Bits 7-0: 8-bit data
+    uint16_t write_request = 0x8000 | ((addr & 0x1F) << 8) | (data & 0xFF);
+    SPI.transfer16(write_request);
+    digitalWrite(SPI_CS_POS, HIGH);
+    delay(20);
+    
+    digitalWrite(SPI_CS_POS, LOW);
+    delayMicroseconds(1); // Small delay for setup time
+    
+    // Frame 2: Dummy transaction (some devices require this)
+    uint16_t res = SPI.transfer16(0x0000);
+    if(res >> 8 != data){
+        Serial.printf("Failed to write data! Got: %x, expected: %x\n", res, data);
+    }
+    
+    // Pull CS high to end communication
+    digitalWrite(SPI_CS_POS, HIGH);
+}
+
+float getEncoderAngle(){
+  uint16_t result = 0;
+  
+  
+  digitalWrite(SPI_CS_POS, LOW);
+  delayMicroseconds(1);
+
+  uint16_t encoder_value = SPI.transfer16(0x0000);
+
+  delayMicroseconds(1);
+  digitalWrite(SPI_CS_POS, HIGH);
+
+  encoder_value = encoder_value;
+  float angle = ((float)encoder_value) / 65535.0;
+  angle = angle * 2 * PI;
+  return angle;
+  
+}
+
+void readyEncoder(){
+
+}
+GenericSensor encoder = GenericSensor(getEncoderAngle, readyEncoder); 
 
 void setup() {
   IOSetup();
+  initSPI();
   // use monitoring with serial 
   Serial.begin(2000000);
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
-  encoder.quadrature = Quadrature::ON;
+  // encoder.quadrature = Quadrature::ON;
   // encoder.pullup = Pullup::USE_INTERN;
 
   encoder.init();
-  encoder.enableInterrupts(doA, doB);
+  // encoder.enableInterrupts(doA, doB);
   motor.linkSensor(&encoder);
   
   // driver.pwm_frequency = 20000;
@@ -163,10 +252,23 @@ void setup() {
   
   motor.initFOC();
 
+  // while(1){
+
+  //   encoder.update();
+
+  //   static unsigned long lastPrintTime = 0;
+  //   unsigned long now = millis();
+  //   if (now - lastPrintTime >= 250) {
+  //     Serial.println(encoder.getAngle());
+  //     lastPrintTime = now;
+  //   }
+  //   // _delay(250);
+  // }
+
   // motor.LPF_velocity = 0.01;
   // motor.motion_downsample = 10;
   // motor.disable();
-  motor.move(100);
+  // motor.move(100);
   
   digitalWrite(DRV_EN, LOW);
   _delay(10);

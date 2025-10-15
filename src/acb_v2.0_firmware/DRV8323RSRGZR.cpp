@@ -1,8 +1,16 @@
+#include "wiring_time.h"
 #include "DRV8323RSRGZR.h"
+#include "config.h"
 
 DRV8323RSRGZR::DRV8323RSRGZR(uint8_t cs_pin) : _cs_pin(cs_pin) {}
 
 void DRV8323RSRGZR::init() {}
+
+void DRV8323RSRGZR::resetFaults(){
+    digitalWrite(DRV_EN, LOW);
+    delayMicroseconds(100);
+    digitalWrite(DRV_EN, HIGH);
+}
 
 uint16_t DRV8323RSRGZR::readRegister(uint8_t reg_address) {    
     // digitalWrite(PB9, HIGH);

@@ -4,17 +4,17 @@
 #include <Arduino.h>
 #include <SimpleFOC.h>
 #include "config_manager.h"
+#include "MA730GQ.h"
 
 class CommandManager {
 public:
     // Constructor
-    CommandManager(BLDCMotor* motor);
+    CommandManager(BLDCMotor* motor, MA730GQ* encoder);
     
     // Main command processing function
     void process_serial_commands();
     
     // Broadcast data handling
-    void handle_broadcast_data();
     
     // Command handlers
     void handle_set_position(float position);
@@ -28,7 +28,6 @@ public:
     void handle_home();
     void handle_stop();
     void handle_cmd_mode(int mode);
-    void handle_broadcast(float frequency);
     void handle_get_velocity_pid();
     void handle_set_velocity_pid(float p, float i, float d);
     void handle_get_angle_pid();
@@ -45,6 +44,22 @@ public:
     void handle_drv8323_fault_check();
     void handle_get_pole_pairs();
     void handle_set_pole_pairs(int pole_pairs);
+    void handle_reset_position();
+    void handle_get_current_a();
+    void handle_get_current_b();
+    void handle_get_current_c();
+    void handle_get_full_state();
+    void handle_get_encoder_mag_status();
+    void handle_reset_config_defaults();
+    void handle_reset();
+    void handle_help();
+    void handle_get_version();
+    void handle_get_min_angle();
+    void handle_set_min_angle(float min_angle);
+    void handle_get_max_angle();
+    void handle_set_max_angle(float max_angle);
+    void handle_get_absolute_angle_calibration();
+    void handle_set_absolute_angle_calibration(float abs_angle);
     
     // Utility functions
     float q88_to_float(uint16_t q88);
@@ -52,15 +67,12 @@ public:
     float q412_to_float(uint16_t q412);
     uint16_t float_to_q412(float value);
     
-    // Command mode and broadcast variables
+    // Command mode variables
     int command_mode;
-    float broadcast_frequency;
-    unsigned long last_broadcast_time;
-    unsigned long broadcast_interval;
 
 private:
     BLDCMotor* motor_;
-    
+    MA730GQ* encoder_;
     // Private command parsing functions
     void parse_human_readable_command(String command);
     void parse_binary_command();

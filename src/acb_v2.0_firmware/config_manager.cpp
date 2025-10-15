@@ -27,6 +27,13 @@ void initConfig() {
   // Motor Configuration defaults
   acb_config.pole_pairs = DEFAULT_POLE_PAIRS;
   
+  // Angle Limits Configuration defaults
+  acb_config.min_angle = DEFAULT_MIN_ANGLE;
+  acb_config.max_angle = DEFAULT_MAX_ANGLE;
+  
+  // Absolute Angle Calibration defaults
+  acb_config.absolute_angle_zero_calibration = 0.0f;  // Default to 0
+  
   // Add more default values here as needed
   // Example:
   // acb_config.motor_voltage_limit = DEFAULT_VOLTAGE_LIMIT;
@@ -51,6 +58,7 @@ bool loadConfig() {
   }
   
   Serial.println("Configuration loaded from EEPROM");
+  printConfig();
   return true;
 }
 
@@ -101,6 +109,17 @@ void printConfig() {
   Serial.print(acb_config.zero_electric_angle);
   Serial.print(", Sensor Direction=");
   Serial.println(acb_config.sensor_direction);
+  
+  Serial.print("Motor Configuration: Pole Pairs=");
+  Serial.println(acb_config.pole_pairs);
+  
+  Serial.print("Angle Limits: Min=");
+  Serial.print(acb_config.min_angle);
+  Serial.print(", Max=");
+  Serial.println(acb_config.max_angle);
+  
+  Serial.print("Absolute Angle Zero Calibration: ");
+  Serial.println(acb_config.absolute_angle_zero_calibration);
   
   // Add more configuration printing here as needed
 }

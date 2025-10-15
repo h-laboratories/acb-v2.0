@@ -26,6 +26,7 @@ void doB(){encoder.handleB();}
 void doI(){encoder.handleIndex();}
 /* ENCODER END */
 
+
 /* BUTTON INTERRUPT */
 void buttonISR() {
   // Small delay to debounce the button
@@ -40,12 +41,17 @@ void buttonISR() {
 /* BUTTON END */
 
 /* COMMAND MANAGER */
-CommandManager command_manager(&motor);
+CommandManager command_manager(&motor, &spi_encoder);
 
 /* BOARD MONITORING VARIABLES */
 float board_temperature = 0.0f;
 float bus_voltage = 0.0f;
 float internal_temperature = 0.0f;
+
+/* CURRENT MONITORING VARIABLES */
+float current_a = 0.0f;
+float current_b = 0.0f;
+float current_c = 0.0f;
 
 
 void IOSetup(){
@@ -64,10 +70,15 @@ void IOSetup(){
   // LED pins 
   pinMode(COM_LED, OUTPUT);
   pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(STATUS_LED, HIGH);
 
   // Board monitoring
   pinMode(BUS_V, INPUT);
   pinMode(TEMP, INPUT);
+  
+  // Button setup with interrupt
+  pinMode(BUTTON, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), buttonISR, FALLING);
   
   delay(10);  // Allow sensor to stabilize
 }
@@ -153,29 +164,64 @@ float calculateInternalTemperature() {
   return -1;
 }
 
+/**
+ * Check angle limits and switch to position mode if exceeded
+ * This function monitors the motor position when in velocity or torque mode
+ * and automatically switches to position mode at the nearest limit if exceeded
+ */
+void check_angle_limits() {
+  // Only check limits if motor is in velocity or torque mode
+  if (motor.controller != MotionControlType::velocity && 
+      motor.controller != MotionControlType::torque) {
+    return;
+  }
+  
+  // Get current position in degrees
+  float current_position = motor.shaft_angle * 180.0f / PI;
+  
+  // Check if position is outside limits
+  if (current_position < acb_config.min_angle) {
+    // Position is below minimum, switch to position mode at minimum
+    motor.target = acb_config.min_angle * PI / 180.0f;
+    motor.controller = MotionControlType::angle;
+    
+    Serial.print("set_position ");
+    Serial.println(acb_config.min_angle);
+  } else if (current_position > acb_config.max_angle) {
+    // Position is above maximum, switch to position mode at maximum
+    motor.target = acb_config.max_angle * PI / 180.0f;
+    motor.controller = MotionControlType::angle;
+    
+    Serial.print("set_position ");
+    Serial.println(acb_config.max_angle);
+  }
+}
+
 void setup() {
-  IOSetup();
-  digitalWrite(STATUS_LED, HIGH);
+  _delay(1000);
+  
   Serial.begin(SERIAL_BAUD_RATE);
   
-  // Initialize SPI communication
+  // Setups + loads
   initSPI();
-  
-  // Initialize MA730GQ encoder
+  IOSetup();
+  loadConfig();
+
   spi_encoder.init();
-  
-  // Initialize DRV8323 driver
   drv8323.init();
-  
-  // Calculate initial board temperature, bus voltage, and internal temperature
+
   board_temperature = calculateBoardTemperature();
   bus_voltage = calculateBusVoltage();
   internal_temperature = calculateInternalTemperature();
-  // Load configuration from EEPROM
-  loadConfig();
-  
-  // Update motor pole pairs from configuration
-  motor.pole_pairs = acb_config.pole_pairs;
+
+  if (bus_voltage > 30 || bus_voltage < 12){
+    Serial.print("ACBv2.0 limited to 30V. (Detected ");
+    Serial.print(bus_voltage,2);
+    Serial.println("v)");
+    Serial.println("Please use an input voltage to 12v-30v");
+    exit(1);
+  }
+    
   
   // Initialize encoder
   encoder.quadrature = Quadrature::ON;
@@ -186,7 +232,9 @@ void setup() {
   
   // Configure driver
   driver.voltage_power_supply = bus_voltage;
-  driver.voltage_limit = DEFAULT_VOLTAGE_LIMIT;
+  driver.voltage_limit = 4;
+  driver.pwm_frequency = DEFAULT_PWM_FREQUENCY;
+
   if(!driver.init()){
     Serial.println("Driver init failed!");
     return;
@@ -196,14 +244,24 @@ void setup() {
   current_sense.linkDriver(&driver);
   motor.linkDriver(&driver);
   
-  // Configure motor limits
+  // Configure motor
   motor.voltage_limit = driver.voltage_limit/2;
   motor.voltage_sensor_align = 1;
-  motor.velocity_index_search = 10;
+  motor.velocity_index_search = 5;
+  motor.pole_pairs = acb_config.pole_pairs;
   
   // Set up motion control
   motor.controller = MotionControlType::velocity;
+  // motor.torque_controller = TorqueControlType::foc_current;
+  motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
+  motor.LPF_velocity = 0.05;
+  motor.LPF_angle = 0.05;
+  motor.LPF_current_d = 0.005;
+  motor.LPF_current_q = 0.005;
+
+  motor.target = 0;  
+
   // Apply PID settings from configuration
   motor.PID_velocity.P = acb_config.velocity_p;
   motor.PID_velocity.I = acb_config.velocity_i;
@@ -216,21 +274,23 @@ void setup() {
   motor.PID_current_q.P = acb_config.current_p;
   motor.PID_current_q.I = acb_config.current_i;
   motor.PID_current_q.D = acb_config.current_d;
-  
+    
+  motor.PID_current_d.P = acb_config.current_p;
+  motor.PID_current_d.I = acb_config.current_i;
+  motor.PID_current_d.D = acb_config.current_d;
+
   // Apply sensor calibration values from configuration
-  motor.zero_electric_angle = acb_config.zero_electric_angle;
   motor.sensor_direction = (acb_config.sensor_direction == 1) ? Direction::CW : Direction::CCW;
 
+  // Calibrate driver
   digitalWrite(DRV_EN, HIGH);
   // Initialize current sense
   current_sense.init();
   motor.linkCurrentSense(&current_sense);
   delay(10);
-  // Calibrate driver
   digitalWrite(DRV_CAL, HIGH);
-  delay(1);
+  delayMicroseconds(100);
   digitalWrite(DRV_CAL, LOW);
-  delay(10);
   
   // Initialize motor
   if(!motor.init()){
@@ -239,36 +299,54 @@ void setup() {
   }
   delay(10);
   
+  current_sense.init();
+  current_sense.skip_align = true; // This stops sstartup movement, but the encoder.update() in theory should be fine if align enabled.
+  motor.linkCurrentSense(&current_sense);
+
   motor.initFOC();
   
-  // Disable and re-enable driver
-  digitalWrite(DRV_EN, LOW);
-  delay(10);
-  digitalWrite(DRV_EN, HIGH);
-  _delay(100);  
+  // Apply absolute angle correction
+  // Electrical angle = (pole_pairs * mechanical angle) + offset  
+  float current_absolute_angle = spi_encoder.getAngleRadians();
+  encoder.update(); // This is to handle any movement during startup
+  float current_relative_angle = encoder.getMechanicalAngle();
   
-  motor.disable();
   motor.controller = MotionControlType::velocity;
   motor.target = 0;
   motor.LPF_velocity = 0.05;
   motor.LPF_angle = 0.05;
+  
+  float zero_electric_calibrated = acb_config.zero_electric_angle-((current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
+  zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
+  
+  if(zero_electric_calibrated < 0) {
+    zero_electric_calibrated += 2*PI;
+  }
+  motor.zero_electric_angle = zero_electric_calibrated;
+
+  Serial.print("Applied absolute angle calibration correction: ");
+  Serial.print(motor.zero_electric_angle);
+  Serial.println(" rad");
+
+  
+  // Disable and re-enable driver
+  drv8323.resetFaults();
+  
+  motor.disable();
 
   Serial.println("ACB v2.0 Firmware Ready");
-  Serial.println("Open-Actuator Protocol Active");
-  Serial.println("Commands: set_position, set_velocity, set_torque, get_position, get_velocity, get_torque, enable, disable, home, stop, cmd_mode, broadcast");
-  Serial.println("PID Commands: get_velocity_pid, set_velocity_pid, get_angle_pid, set_angle_pid, get_current_pid, set_current_pid, save_config");
-  Serial.println("Motion Commands: get_downsample, set_downsample");
-  Serial.println("Motor Commands: get_pole_pairs, set_pole_pairs");
-  Serial.println("Monitoring Commands: get_temperature, get_bus_voltage, get_internal_temperature, drv8323_fault_check");
-  Serial.println("Calibration Commands: recalibrate_sensors");
+  Serial.println("Open-Actuator Protocol Active, enter help for commands.");
+ 
+  _delay(1000);
 }
 
-void loop() {
+void loop() {  
   // Process serial commands
+  // float loop_start_time = micros();
   command_manager.process_serial_commands();
 
-  // Handle broadcast data transmission
-  command_manager.handle_broadcast_data();
+  // Check angle limits and switch to position mode if exceeded
+  check_angle_limits();
 
   // Update board monitoring values
   board_temperature = calculateBoardTemperature();

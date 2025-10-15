@@ -26,6 +26,13 @@ struct ACBConfig {
   // Motor Configuration
   int pole_pairs;
   
+  // Angle Limits Configuration
+  float min_angle;  // Minimum allowed angle in degrees
+  float max_angle;  // Maximum allowed angle in degrees
+  
+  // Absolute Angle Calibration
+  float absolute_angle_zero_calibration;  // Absolute angle at zero position during calibration
+  
   // Add more configuration variables here as needed
   // Example:
   // float motor_voltage_limit;
