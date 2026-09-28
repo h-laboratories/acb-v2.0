@@ -145,8 +145,8 @@ float calculateBoardTemperature() {
  */
 float calculateBusVoltage() {
   // TODO: PB15 bus sense reads ADC full scale on the bench board (2026-09-08);
-  // hard-coded to the measured supply (15.2 V bench PSU) until the divider is checked.
-  return 15.2f;
+  // hard-coded to the measured supply (20 V bench PSU) until the divider is checked.
+  return 20.0f;
   float voltage = readAdcVolts(BUS_V);
   
   // Calculate actual bus voltage using voltage divider formula
