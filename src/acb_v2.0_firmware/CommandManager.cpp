@@ -1,5 +1,6 @@
 #include "CommandManager.h"
 #include "DRV8323RSRGZR.h"
+#include "cogging.h"
 #include <SimpleFOC.h>
 #include <math.h>
 
@@ -152,6 +153,21 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_get_absolute_angle_calibration();
     } else if (command == "get_encoder_angles") {
         handle_get_encoder_angles();
+    } else if (command == "cog_status") {
+        handle_cog_status();
+    } else if (command == "cog_calib") {
+        if (command_mode == 1) Serial.println(coggingStart(NULL) ? "cog_calib started" : "cog_calib error: motor not aligned or voltage torque mode");
+    } else if (command == "cog_abort") {
+        coggingAbort();
+        if (command_mode == 1) Serial.println("cog_abort ok");
+    } else if (command == "cog_enable") {
+        if (command_mode == 1) Serial.println(coggingSetEnabled(true) ? "cog_enable ok" : "cog_enable error: no valid map");
+    } else if (command == "cog_disable") {
+        coggingSetEnabled(false);
+        if (command_mode == 1) Serial.println("cog_disable ok");
+    } else if (command == "cog_save") {
+        uint8_t st = coggingSave();
+        if (command_mode == 1) { Serial.print("cog_save "); Serial.println(st == 0 ? "ok" : (st == 3 ? "error: no map or motor enabled" : "error: flash")); }
     } else if (command.startsWith("set_absolute_angle_calibration ")) {
         float abs_angle = command.substring(31).toFloat();
         handle_set_absolute_angle_calibration(abs_angle);
@@ -1020,6 +1036,26 @@ void CommandManager::handle_get_encoder_angles() {
     Serial.print(motor_->electrical_angle, 4);
     Serial.print(" dir ");
     Serial.println((int)motor_->sensor_direction);
+}
+
+void CommandManager::handle_cog_status() {
+    if (command_mode != 1) return;
+    Serial.print("cog_status state ");
+    Serial.print((int)coggingState());
+    Serial.print(" valid ");
+    Serial.print(coggingValid() ? 1 : 0);
+    Serial.print(" enabled ");
+    Serial.print(coggingEnabled() ? 1 : 0);
+    Serial.print(" saved ");
+    Serial.print(coggingSaved() ? 1 : 0);
+    Serial.print(" index ");
+    Serial.print(coggingIndex());
+    Serial.print(" n ");
+    Serial.print(COG_MAP_N);
+    Serial.print(" timeouts ");
+    Serial.print(coggingTimeouts());
+    Serial.print(" map_angle ");
+    Serial.println(coggingMapAngle(), 4);
 }
 
 void CommandManager::handle_get_absolute_angle_calibration() {

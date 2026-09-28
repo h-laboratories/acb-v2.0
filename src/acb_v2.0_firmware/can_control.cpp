@@ -15,6 +15,7 @@ extern Encoder encoder;
 extern LowsideCurrentSense current_sense;
 extern DRV8323RSRGZR drv8323;
 extern CommandManager command_manager;
+#include "cogging.h"
 extern uint8_t g_drvSpiMode;
 extern uint32_t g_drvSpiHz;
 extern float bus_voltage, board_temperature, internal_temperature;
@@ -191,6 +192,42 @@ bool canAppCommand(const uint8_t* d, uint8_t n, uint8_t* r, uint8_t* rlen) {
       r[2] = d[1];
       wru16(&r[3], drv8323.readRegister(d[1]));
       *rlen = 5;
+      return true;
+    }
+    case ACB_CMD_COG_CALIB: {
+      if (n < 2) { r[1] = ACB_ST_ARG; return true; }
+      if (!d[1]) { coggingAbort(); return true; }
+      CogCalParams p = {1, 0.1f, 30, 400};
+      if (n >= 6) { p.pos_thr_counts = d[2]; p.vel_thr = d[3] * 0.01f; p.dwell_ms = d[4]; p.timeout_ms = (uint16_t)d[5] * 10u; }
+      if (isOpenLoop()) motor.controller = MotionControlType::velocity;   // calibration returns to a closed-loop mode
+      if (!coggingStart(&p)) r[1] = ACB_ST_STATE;
+      return true;
+    }
+    case ACB_CMD_COG_ENABLE: {
+      if (n < 2) { r[1] = ACB_ST_ARG; return true; }
+      if (!coggingSetEnabled(d[1] != 0)) r[1] = ACB_ST_STATE;
+      return true;
+    }
+    case ACB_CMD_COG_SAVE:
+      r[1] = coggingSave();
+      return true;
+    case ACB_CMD_COG_STATUS: {
+      r[1] = (uint8_t)coggingState();
+      r[2] = (coggingValid() ? 1 : 0) | (coggingEnabled() ? 2 : 0) | (coggingSaved() ? 4 : 0);
+      wru16(&r[3], coggingIndex());
+      wru16(&r[5], COG_MAP_N);
+      r[7] = coggingTimeouts();
+      *rlen = 8;
+      return true;
+    }
+    case ACB_CMD_COG_GET: {
+      if (n < 3) { r[1] = ACB_ST_ARG; return true; }
+      const uint16_t i = d[1] | (d[2] << 8);
+      if (i >= COG_MAP_N) { r[1] = ACB_ST_ARG; return true; }
+      wru16(&r[1], i);
+      wri16(&r[3], coggingEntry(i));
+      wri16(&r[5], coggingEntry((i + 1) % COG_MAP_N));
+      *rlen = 7;
       return true;
     }
     default:

@@ -6,7 +6,7 @@
 # Sketches built with it are linked at 0x08008000 and the IDE's DFU upload writes them there,
 # leaving the bootloader in the first 32 KB untouched.
 GenG4.menu.pnum.ACB_V2_CANBOOT=ACB v2.0 (G474RETx, CAN bootloader app)
-GenG4.menu.pnum.ACB_V2_CANBOOT.upload.maximum_size=520192
+GenG4.menu.pnum.ACB_V2_CANBOOT.upload.maximum_size=479232
 GenG4.menu.pnum.ACB_V2_CANBOOT.upload.maximum_data_size=131072
 GenG4.menu.pnum.ACB_V2_CANBOOT.build.board=GENERIC_G474RETX
 GenG4.menu.pnum.ACB_V2_CANBOOT.build.product_line=STM32G474xx

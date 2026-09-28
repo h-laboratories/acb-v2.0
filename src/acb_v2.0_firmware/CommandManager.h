@@ -60,6 +60,7 @@ public:
     void handle_set_max_angle(float max_angle);
     void handle_get_absolute_angle_calibration();
     void handle_get_encoder_angles();
+    void handle_cog_status();
     void handle_set_absolute_angle_calibration(float abs_angle);
     void handle_get_torque_controller();
     void handle_set_torque_controller(int controller_type);

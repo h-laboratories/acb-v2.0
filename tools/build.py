@@ -34,7 +34,7 @@ TARGETS = {
     "app": {
         "sketch": "src/acb_v2.0_firmware",
         "usb": "CDCgen",
-        "props": {"build.flash_offset": "0x8000", "upload.maximum_size": "520192"},  # 0x7F000: keep EEPROM page
+        "props": {"build.flash_offset": "0x8000", "upload.maximum_size": "479232"},  # 0x75000: keep anti-cogging map (0x7D000) + EEPROM page (0x7F000)
         "addr": 0x08008000,
     },
     "can_test": {

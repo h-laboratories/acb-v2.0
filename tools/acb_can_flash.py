@@ -41,6 +41,8 @@ CMD_SERIAL_STREAM = 0x18
 CMD_RECALIBRATE, CMD_SET_ILIMIT = 0x19, 0x1A
 CMD_SET_TORQUE_MODE, CMD_GET_CURRENTS, CMD_GET_DQ = 0x1B, 0x24, 0x25
 CMD_DRV_SPI_CFG = 0x1C
+CMD_COG_CALIB, CMD_COG_ENABLE, CMD_COG_SAVE, CMD_COG_STATUS, CMD_COG_GET = 0x1D, 0x1E, 0x1F, 0x26, 0x27
+COG_STATES = {0: "idle", 1: "calibrating", 2: "done", 3: "aborted"}
 TORQUE_MODES = {"voltage": 0, "dc_current": 1, "foc_current": 2}
 DRV_FS1_BITS = {10: "FAULT", 9: "VDS_OCP", 8: "GDF", 7: "UVLO", 6: "OTSD",
                 5: "VDS_HA", 4: "VDS_LA", 3: "VDS_HB", 2: "VDS_LB", 1: "VDS_HC", 0: "VDS_LC"}
@@ -476,6 +478,61 @@ def cmd_ctl(bus, args):
         print(fmt_state(n.get_state()))
     elif c == "telemetry":
         print(fmt_telemetry(n.get_telemetry()))
+    elif c == "cog":
+        def cog_status():
+            d = n.ctl(CMD_COG_STATUS)
+            idx, total = struct.unpack_from("<HH", d, 3)
+            return {"state": COG_STATES.get(d[1], str(d[1])), "valid": bool(d[2] & 1), "enabled": bool(d[2] & 2),
+                    "saved": bool(d[2] & 4), "index": idx, "n": total, "timeouts": d[7]}
+        def fmt_cog(s):
+            return (f"state {s['state']:<11} valid {int(s['valid'])} enabled {int(s['enabled'])} saved {int(s['saved'])}  "
+                    f"index {s['index']}/{s['n']}  timeouts {s['timeouts']}")
+        a = args.action
+        if a == "status":
+            print(fmt_cog(cog_status()))
+        elif a == "calib":
+            vel = max(1, min(255, int(round(args.vel * 100))))
+            payload = bytes([1, max(1, min(255, args.pos_counts)), vel, max(1, min(255, args.dwell_ms)),
+                             max(1, min(255, args.timeout_ms // 10))])
+            n.ctl(CMD_COG_CALIB, payload)
+            s = cog_status()
+            print(f"anti-cogging calibration started: {s['n']} points, settle <= {args.pos_counts} count(s) & {args.vel} rad/s "
+                  f"for {args.dwell_ms} ms, timeout {args.timeout_ms} ms per point")
+            if args.watch:
+                t0 = time.monotonic()
+                while True:
+                    time.sleep(2.0)
+                    s = cog_status()
+                    print(f"  t={time.monotonic()-t0:5.0f}s  {fmt_cog(s)}", flush=True)
+                    if s["state"] != "calibrating":
+                        break
+                print("finished:", s["state"], "- use `cog save` (with the motor disabled) to persist it")
+        elif a == "abort":
+            n.ctl(CMD_COG_CALIB, b"\x00")
+            print("calibration aborted")
+        elif a in ("enable", "disable"):
+            n.ctl(CMD_COG_ENABLE, b"\x01" if a == "enable" else b"\x00")
+            print(f"anti-cogging feed-forward {a}d")
+        elif a == "save":
+            n.ctl(CMD_COG_SAVE)
+            print("map saved to flash")
+        elif a == "dump":
+            total = cog_status()["n"]
+            vals = []
+            for i in range(0, total, 2):
+                d = n.ctl(CMD_COG_GET, struct.pack("<H", i))
+                v0, v1 = struct.unpack_from("<hh", d, 3)
+                vals += [v0, v1]
+            vals = vals[:total]
+            if args.out:
+                with open(args.out, "w") as f:
+                    f.write("index,angle_deg,current_mA\n")
+                    for i, v in enumerate(vals):
+                        f.write(f"{i},{360.0*i/total:.4f},{v}\n")
+                print(f"wrote {total} points to {args.out}")
+            mean = sum(vals) / total
+            rms = (sum((v - mean) ** 2 for v in vals) / total) ** 0.5
+            print(f"{total} points: min {min(vals)} mA  max {max(vals)} mA  mean {mean:+.0f} mA  rms(about mean) {rms:.0f} mA")
     elif c == "ilimit":
         n.ctl(CMD_SET_ILIMIT, struct.pack("<f", args.amps))
         print(f"current limit -> {args.amps} A")
@@ -627,6 +684,15 @@ def main():
     sub.add_parser("save-config", help="persist config (pole pairs etc.) to EEPROM").set_defaults(func=cmd_ctl)
     sub.add_parser("state", help="read mode, enable, velocity and angle").set_defaults(func=cmd_ctl)
     sub.add_parser("telemetry", help="read bus voltage, temperatures, driver fault").set_defaults(func=cmd_ctl)
+    g = sub.add_parser("cog", help="anti-cogging map: calib | abort | status | enable | disable | save | dump")
+    g.add_argument("action", choices=["calib", "abort", "status", "enable", "disable", "save", "dump"])
+    g.add_argument("--pos-counts", type=int, default=1, help="calib: settle window in encoder counts (default 1)")
+    g.add_argument("--vel", type=float, default=0.1, help="calib: settle velocity threshold in rad/s (default 0.1)")
+    g.add_argument("--dwell-ms", type=int, default=30, help="calib: settled time before a point is recorded (default 30)")
+    g.add_argument("--timeout-ms", type=int, default=400, help="calib: per-point timeout, records anyway (default 400)")
+    g.add_argument("--watch", action="store_true", help="calib: poll progress until finished")
+    g.add_argument("--out", help="dump: write the map to this CSV file")
+    g.set_defaults(func=cmd_ctl)
     g = sub.add_parser("ilimit", help="set motor current limit in amps")
     g.add_argument("amps", type=float)
     g.set_defaults(func=cmd_ctl)

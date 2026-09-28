@@ -77,6 +77,11 @@ typedef struct {
 #define ACB_CMD_GET_CURRENTS     0x24 // -> [0x24, ia mA i16, ib mA i16, ic mA i16, 0]   raw phase currents from the sense amps
 #define ACB_CMD_GET_DQ           0x25 // -> [0x25, iq mA i16, id mA i16, uq mV i16, 0]  FOC currents / q voltage
 #define ACB_CMD_DRV_SPI_CFG      0x1C // [mode 0-3, clk_khz LE16] SPI settings used for DRV8323 transactions -> [0x1C, status]
+#define ACB_CMD_COG_CALIB        0x1D // [1 start | 0 abort, pos_thr counts u8, vel_thr (0.01 rad/s) u8, dwell ms u8, timeout (10 ms) u8] -> [0x1D, status]
+#define ACB_CMD_COG_ENABLE       0x1E // [0|1] apply the anti-cogging map as current feed-forward -> [0x1E, status]
+#define ACB_CMD_COG_SAVE         0x1F // -> [0x1F, status]  write the map to flash (motor must be disabled)
+#define ACB_CMD_COG_STATUS       0x26 // -> [0x26, state (0 idle,1 calibrating,2 done,3 aborted), flags (valid | enabled<<1 | saved<<2), index LE16, n LE16, timeouts]
+#define ACB_CMD_COG_GET          0x27 // [idx LE16] -> [0x27, idx LE16, map[idx] mA i16, map[idx+1] mA i16]
 
 // PING / HELLO flags
 #define ACB_FLAG_APP_VALID      0x01

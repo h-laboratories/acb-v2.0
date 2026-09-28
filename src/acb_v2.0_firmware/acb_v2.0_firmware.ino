@@ -4,6 +4,7 @@
 #include "DRV8323RSRGZR.h"
 #include "CommandManager.h"
 #include "can_boot.h"
+#include "cogging.h"
 #include <SimpleFOC.h>
 #include <SPI.h>
 
@@ -47,6 +48,7 @@ CommandManager command_manager(&motor, &spi_encoder);
 /* BOARD MONITORING VARIABLES */
 float board_temperature = 0.0f;
 float bus_voltage = 0.0f;
+float g_encoderAbsOffset = 0.0f;   // MA730 absolute - incremental mechanical angle at boot (anti-cogging map frame)
 float internal_temperature = 0.0f;
 
 /* CURRENT MONITORING VARIABLES */
@@ -235,6 +237,7 @@ void setup() {
   IOSetup();
   canBootInit();   // CAN bootloader hook: answers PING / ENTER so the board can be reflashed over CAN
   loadConfig();
+  coggingLoad();
 
   spi_encoder.init();
   drv8323.init();
@@ -346,6 +349,7 @@ void setup() {
   
   // Inverse of the save formula in CommandManager::handle_recalibrate_sensors():
   // electrical = dir * pp * mech - zero, so the encoder frame offset carries dir.
+  g_encoderAbsOffset = current_absolute_angle - current_relative_angle;
   float zero_electric_calibrated = acb_config.zero_electric_angle-(acb_config.sensor_direction * (current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
   zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
   
@@ -392,5 +396,7 @@ void loop() {
   /* TODO: Handle driver faults */
   
   motor.loopFOC();
+  coggingUpdate();   // anti-cogging calibration state machine (no-op unless calibrating)
   motor.move();
+  coggingApply();    // anti-cogging feed-forward on the current setpoint
 }

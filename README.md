@@ -26,7 +26,8 @@ Flash layout:
 |---|---|
 | `0x08000000 - 0x08006FFF` | bootloader (build with `upload.maximum_size=28672`) |
 | `0x08007000 - 0x08007FFF` | boot config page (CAN node id, default 1) |
-| `0x08008000 - 0x0807EFFF` | application (build with `build.flash_offset=0x8000`) |
+| `0x08008000 - 0x0807CFFF` | application (build with `build.flash_offset=0x8000`) |
+| `0x0807D000 - 0x0807EFFF` | anti-cogging map (`src/acb_v2.0_firmware/cogging.cpp`) |
 | `0x0807F000 - 0x0807FFFF` | reserved for the application's EEPROM emulation |
 
 ### One-time install (DFU)
@@ -49,6 +50,18 @@ After every reset the bootloader listens for 300 ms before starting the applicat
 
 ### Arduino IDE
 To build the application from the IDE with the correct offset, copy `tools/boards.local.txt` next to the STM32 core's `boards.txt` (see the comment in that file) and pick the board part number **ACB v2.0 (G474RETx, CAN bootloader app)**. The IDE's DFU upload then writes at `0x08008000` and leaves the bootloader intact.
+
+## Anti-cogging
+`src/acb_v2.0_firmware/cogging.cpp` implements ODrive-style anti-cogging: a calibration steps the rotor through 2048 positions per revolution in angle mode, waits for position and velocity to settle at each, and records the current needed to hold it. Once enabled, the interpolated map value is added to the current setpoint as feed-forward torque in every closed-loop mode with a current torque controller. The map is keyed to the absolute rotor angle (incremental encoder plus the MA730 offset read at boot) and stored in flash at `0x0807D000` together with the pole-pair count and sensor direction it was measured with.
+
+```bash
+python tools/acb_can_flash.py cog calib --watch --node 1   # motor must be aligned; takes a few minutes
+python tools/acb_can_flash.py cog status --node 1
+python tools/acb_can_flash.py disable --node 1 && python tools/acb_can_flash.py cog save --node 1
+python tools/acb_can_flash.py cog dump --out cogging.csv --node 1
+python tools/acb_can_flash.py cog disable --node 1         # A/B compare against the raw motor
+```
+The equivalent USB serial commands are `cog_calib`, `cog_abort`, `cog_status`, `cog_enable`, `cog_disable` and `cog_save`.
 
 ## TODO
 - [ ] Fix exception handling for higher voltages
