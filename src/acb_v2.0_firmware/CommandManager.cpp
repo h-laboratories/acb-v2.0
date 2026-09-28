@@ -150,6 +150,8 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_set_max_angle(max_angle);
     } else if (command == "get_absolute_angle_calibration") {
         handle_get_absolute_angle_calibration();
+    } else if (command == "get_encoder_angles") {
+        handle_get_encoder_angles();
     } else if (command.startsWith("set_absolute_angle_calibration ")) {
         float abs_angle = command.substring(31).toFloat();
         handle_set_absolute_angle_calibration(abs_angle);
@@ -606,7 +608,9 @@ void CommandManager::handle_recalibrate_sensors() {
     float absolute_angle_zero_calibration = encoder_->getAngleRadians();
     float relative_mechanical_position = motor_->sensor->getMechanicalAngle();
     relative_mechanical_position = fmod(relative_mechanical_position, 2*PI);
-    float actual_zero_angle = fmod(((absolute_angle_zero_calibration-relative_mechanical_position) * acb_config.pole_pairs) + motor_->zero_electric_angle, 2*PI);
+    // electrical = dir * pp * mech - zero, so the frame offset between the
+    // absolute (MA730) and incremental encoders must carry the sensor direction.
+    float actual_zero_angle = fmod((acb_config.sensor_direction * (absolute_angle_zero_calibration-relative_mechanical_position) * acb_config.pole_pairs) + motor_->zero_electric_angle, 2*PI);
     
     if (actual_zero_angle < 0) {
         actual_zero_angle += 2*PI;
@@ -999,6 +1003,23 @@ void CommandManager::handle_set_max_angle(float max_angle) {
         Serial.print("set_max_angle ");
         Serial.println(acb_config.max_angle);
     }
+}
+
+// Debug: live absolute (MA730) angle, incremental mechanical angle, and the
+// electrical zero / angle SimpleFOC is using. All in radians.
+void CommandManager::handle_get_encoder_angles() {
+    float abs_angle = encoder_->getAngleRadians();
+    float mech_angle = motor_->sensor->getMechanicalAngle();
+    Serial.print("get_encoder_angles abs ");
+    Serial.print(abs_angle, 4);
+    Serial.print(" mech ");
+    Serial.print(mech_angle, 4);
+    Serial.print(" zero_el ");
+    Serial.print(motor_->zero_electric_angle, 4);
+    Serial.print(" el ");
+    Serial.print(motor_->electrical_angle, 4);
+    Serial.print(" dir ");
+    Serial.println((int)motor_->sensor_direction);
 }
 
 void CommandManager::handle_get_absolute_angle_calibration() {

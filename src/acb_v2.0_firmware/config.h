@@ -72,11 +72,11 @@
 
 
 // Motor Configuration Constants
-#define MOTOR_POLE_PAIRS 19
-#define DEFAULT_POLE_PAIRS 19
+#define MOTOR_POLE_PAIRS 7
+#define DEFAULT_POLE_PAIRS 7
 
 // Current Sense Configuration
-#define SHUNT_RESISTANCE 0.003f  // Ohms
+#define SHUNT_RESISTANCE 0.008f  // Ohms (8 mR shunts on ACB v2.0; was wrongly 3 mR until 2026-09-28)
 #define CURRENT_GAIN 20.0f       // Current sense amplifier gain
 
 // Driver Configuration
