@@ -1,6 +1,8 @@
 #include "CommandManager.h"
 #include "DRV8323RSRGZR.h"
 #include "cogging.h"
+#include "windowed_encoder.h"
+extern WindowedEncoder encoder;
 #include <SimpleFOC.h>
 #include <math.h>
 
@@ -153,6 +155,27 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_get_absolute_angle_calibration();
     } else if (command == "get_encoder_angles") {
         handle_get_encoder_angles();
+    } else if (command.startsWith("set_velocity_window ")) {
+        // set_velocity_window <min_ms> [max_ms] [min_counts]; min 0 = stock estimator
+        String p = command.substring(20); p.trim();
+        int sp1 = p.indexOf(' '); int sp2 = (sp1 > 0) ? p.indexOf(' ', sp1 + 1) : -1;
+        encoder.window_s = p.substring(0, sp1 > 0 ? sp1 : p.length()).toFloat() * 1e-3f;
+        if (sp1 > 0) encoder.max_window_s = p.substring(sp1 + 1, sp2 > 0 ? sp2 : p.length()).toFloat() * 1e-3f;
+        if (sp2 > 0) encoder.min_counts = p.substring(sp2 + 1).toInt();
+        if (command_mode == 1) {
+            Serial.print("set_velocity_window "); Serial.print(encoder.window_s * 1e3f, 1);
+            Serial.print(" max "); Serial.print(encoder.max_window_s * 1e3f, 1);
+            Serial.print(" min_counts "); Serial.println(encoder.min_counts);
+        }
+    } else if (command == "get_velocity_window") {
+        if (command_mode == 1) {
+            Serial.print("get_velocity_window "); Serial.print(encoder.window_s * 1e3f, 1);
+            Serial.print(" max "); Serial.print(encoder.max_window_s * 1e3f, 1);
+            Serial.print(" min_counts "); Serial.println(encoder.min_counts);
+        }
+    } else if (command.startsWith("set_velocity_lpf ")) {
+        motor_->LPF_velocity.Tf = command.substring(17).toFloat();          // seconds
+        if (command_mode == 1) { Serial.print("set_velocity_lpf "); Serial.println(motor_->LPF_velocity.Tf, 4); }
     } else if (command == "cog_status") {
         handle_cog_status();
     } else if (command == "cog_calib") {

@@ -11,7 +11,8 @@
 
 extern BLDCMotor motor;
 extern BLDCDriver6PWM driver;
-extern Encoder encoder;
+#include "windowed_encoder.h"
+extern WindowedEncoder encoder;
 extern LowsideCurrentSense current_sense;
 extern DRV8323RSRGZR drv8323;
 extern CommandManager command_manager;

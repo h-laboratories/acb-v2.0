@@ -5,6 +5,7 @@
 #include "CommandManager.h"
 #include "can_boot.h"
 #include "cogging.h"
+#include "windowed_encoder.h"
 #include <SimpleFOC.h>
 #include <SPI.h>
 
@@ -15,7 +16,7 @@ BLDCDriver6PWM driver = BLDCDriver6PWM(PWM_H_A, PWM_L_A, PWM_H_B, PWM_L_B, PWM_H
 LowsideCurrentSense current_sense = LowsideCurrentSense(SHUNT_RESISTANCE, CURRENT_GAIN, CURR_A, CURR_B, CURR_C);
 
 /* ENCODER SETUP */
-Encoder encoder = Encoder(ENCODER_A, ENCODER_B, ENCODER_PPR);
+WindowedEncoder encoder = WindowedEncoder(ENCODER_A, ENCODER_B, ENCODER_PPR);
 
 /* MA730GQ SPI ENCODER SETUP */
 MA730GQ spi_encoder = MA730GQ(MA730GQ_CS_PIN);
@@ -288,7 +289,7 @@ void setup() {
   motor.torque_controller = TorqueControlType::foc_current;
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
-  motor.LPF_velocity = 0.05;
+  motor.LPF_velocity = 0.01;   // windowed encoder estimator is already smooth; keep loop delay low
   motor.LPF_angle = 0.05;
   motor.LPF_current_d = 0.05;
   motor.LPF_current_q = 0.05;
@@ -344,7 +345,7 @@ void setup() {
   
   motor.controller = MotionControlType::velocity;
   motor.target = 0;
-  motor.LPF_velocity = 0.05;
+  motor.LPF_velocity = 0.01;   // windowed encoder estimator is already smooth; keep loop delay low
   motor.LPF_angle = 0.05;
   
   // Inverse of the save formula in CommandManager::handle_recalibrate_sensors():
