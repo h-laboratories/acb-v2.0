@@ -53,6 +53,9 @@ static uint32_t crc32(const uint8_t* p, uint32_t len) {
   return ~c;
 }
 
+static void removeMean();
+static void smoothMap();
+
 float coggingMapAngle() {
   if (!motor.sensor) return 0.0f;
   return normAngle(motor.sensor->getMechanicalAngle() + g_encoderAbsOffset);
@@ -125,6 +128,8 @@ void coggingLoad() {
   if (h->pole_pairs != (uint8_t)acb_config.pole_pairs || h->sensor_dir != (int8_t)acb_config.sensor_direction) return;
   if (crc32((const uint8_t*)m, sizeof(g_map)) != h->crc) return;
   memcpy(g_map, m, sizeof(g_map));
+  removeMean();     // raw map is stored; normalise and smooth on load
+  smoothMap();
   g_valid = true; g_saved = true; g_enabled = true;
 }
 
@@ -163,11 +168,37 @@ bool coggingStart(const CogCalParams* p) {
   return true;
 }
 
+// Cogging torque is zero-mean over a revolution. The calibration steps one way,
+// so every point also carries the Coulomb friction current for that direction;
+// remove the mean so the feed-forward does not push against motion the other way.
+#define COG_SMOOTH_HALF 8   // circular moving average over +-8 bins (~3 deg): keeps orders below ~120/rev
+static void removeMean() {
+  long sum = 0;
+  for (uint32_t i = 0; i < COG_MAP_N; i++) sum += g_map[i];
+  const long m = sum / (long)COG_MAP_N;
+  for (uint32_t i = 0; i < COG_MAP_N; i++) g_map[i] = (int16_t)(g_map[i] - m);
+}
+
+// Point-to-point noise in the raw map (settle jitter, quantisation) would be
+// injected as torque noise; average it out. Cogging orders that matter here
+// (pole and slot counts and their low multiples) are far below the cutoff.
+static void smoothMap() {
+  static int16_t tmp[COG_MAP_N];
+  long acc = 0;
+  for (int d = -COG_SMOOTH_HALF; d <= COG_SMOOTH_HALF; d++) acc += g_map[(COG_MAP_N + d) % COG_MAP_N];
+  for (uint32_t i = 0; i < COG_MAP_N; i++) {
+    tmp[i] = (int16_t)(acc / (2 * COG_SMOOTH_HALF + 1));
+    acc -= g_map[(i + COG_MAP_N - COG_SMOOTH_HALF) % COG_MAP_N];
+    acc += g_map[(i + COG_SMOOTH_HALF + 1) % COG_MAP_N];
+  }
+  memcpy(g_map, tmp, sizeof(g_map));
+}
+
 static void finish(CogState s) {
   g_state = s;
   motor.controller = g_prevCtl;
   motor.target = (g_prevCtl == MotionControlType::angle) ? motor.shaft_angle : 0.0f;
-  if (s == COG_DONE) { g_valid = true; g_enabled = true; }
+  if (s == COG_DONE) { removeMean(); smoothMap(); g_valid = true; g_enabled = true; }
 }
 
 void coggingAbort() {
@@ -213,6 +244,11 @@ void coggingApply() {
   if (!g_enabled || !g_valid || g_state == COG_CALIBRATING || !motor.enabled) return;
   if (motor.controller == MotionControlType::velocity_openloop || motor.controller == MotionControlType::angle_openloop) return;
   if (motor.torque_controller == TorqueControlType::voltage) return;
+  // With motion_downsample > 1, motor.move() only recomputes current_sp every
+  // Nth loop; if the setpoint is still the value we produced last time the
+  // feed-forward is already in it. Adding again would accumulate N times.
+  static float lastOut = NAN;
+  if (motor.current_sp == lastOut) return;
   const float pos = coggingMapAngle() * ((float)COG_MAP_N / _2PI);
   uint32_t i = (uint32_t)pos;
   const float f = pos - (float)i;
@@ -220,6 +256,7 @@ void coggingApply() {
   const uint32_t j = (i + 1u) % COG_MAP_N;
   const float ff = ((float)g_map[i] * (1.0f - f) + (float)g_map[j] * f) * 1e-3f;
   motor.current_sp = _constrain(motor.current_sp + ff, -motor.current_limit, motor.current_limit);
+  lastOut = motor.current_sp;
 }
 
 bool coggingSetEnabled(bool en) {
