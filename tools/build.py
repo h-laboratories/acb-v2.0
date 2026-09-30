@@ -43,6 +43,13 @@ TARGETS = {
         "props": {},
         "addr": 0x08000000,
     },
+    "epc": {   # EPC91120 GaN inverter (STM32G431CBU6), programmed over SWD with an ST-LINK; serial on USART2/VCP
+        "sketch": "src/epc91120_firmware",
+        "usb": "none",
+        "fqbn": "STMicroelectronics:stm32:GenG4:pnum=GENERIC_G431CBUX,xserial=generic",
+        "props": {},
+        "addr": 0x08000000,
+    },
 }
 
 
@@ -71,7 +78,8 @@ def build(target, cli):
     t = TARGETS[target]
     out = os.path.join(ROOT, "build", target)
     os.makedirs(out, exist_ok=True)
-    cmd = [cli, "compile", "--fqbn", f"{FQBN_BASE},usb={t['usb']}", "--output-dir", out]
+    fqbn = t.get("fqbn") or f"{FQBN_BASE},usb={t['usb']}"
+    cmd = [cli, "compile", "--fqbn", fqbn, "--output-dir", out]
     for k, v in t["props"].items():
         cmd += ["--build-property", f"{k}={v}"]
     cmd.append(os.path.join(ROOT, t["sketch"]))
