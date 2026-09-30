@@ -1,0 +1,15 @@
+# Arduino IDE support for the ACB v2.0 CAN bootloader.
+#
+# Copy this file next to boards.txt in the STM32 core, e.g.
+#   %LOCALAPPDATA%\Arduino15\packages\STMicroelectronics\hardware\stm32\2.12.0\boards.local.txt
+# then restart the IDE and pick  Board part number > "ACB v2.0 (G474RETx, CAN bootloader app)".
+# Sketches built with it are linked at 0x08008000 and the IDE's DFU upload writes them there,
+# leaving the bootloader in the first 32 KB untouched.
+GenG4.menu.pnum.ACB_V2_CANBOOT=ACB v2.0 (G474RETx, CAN bootloader app)
+GenG4.menu.pnum.ACB_V2_CANBOOT.upload.maximum_size=479232
+GenG4.menu.pnum.ACB_V2_CANBOOT.upload.maximum_data_size=131072
+GenG4.menu.pnum.ACB_V2_CANBOOT.build.board=GENERIC_G474RETX
+GenG4.menu.pnum.ACB_V2_CANBOOT.build.product_line=STM32G474xx
+GenG4.menu.pnum.ACB_V2_CANBOOT.build.variant=STM32G4xx/G473R(B-C)T_G473RETx(Z)_G474R(B-C-E)T_G483RET_G484RET
+GenG4.menu.pnum.ACB_V2_CANBOOT.build.flash_offset=0x8000
+GenG4.menu.pnum.ACB_V2_CANBOOT.debug.svd_file={runtime.tools.STM32_SVD.path}/svd/STM32G4xx/STM32G474.svd

@@ -2,6 +2,21 @@
 #include "DRV8323RSRGZR.h"
 #include "config.h"
 
+// The DRV8323 samples SDI on the falling SCLK edge (SPI mode 1); the encoder
+// and the rest of the firmware use mode 0, so switch per transaction.
+uint8_t  g_drvSpiMode = 1;          // runtime-adjustable for bring-up (ACB_CMD_DRV_SPI_CFG)
+uint32_t g_drvSpiHz   = 1000000;
+static void drvSpiBegin() {
+    static const uint8_t modes[4] = {SPI_MODE0, SPI_MODE1, SPI_MODE2, SPI_MODE3};
+    SPI.beginTransaction(SPISettings(g_drvSpiHz, MSBFIRST, modes[g_drvSpiMode & 3]));
+}
+static void drvSpiEnd() {
+    SPI.endTransaction();
+    SPI.setBitOrder(MSBFIRST);
+    SPI.setDataMode(SPI_MODE0);
+    SPI.setClockDivider(SPI_CLOCK_DIV128);
+}
+
 DRV8323RSRGZR::DRV8323RSRGZR(uint8_t cs_pin) : _cs_pin(cs_pin) {}
 
 void DRV8323RSRGZR::init() {}
@@ -19,16 +34,15 @@ uint16_t DRV8323RSRGZR::readRegister(uint8_t reg_address) {
     digitalWrite(_cs_pin, LOW);
     delayMicroseconds(10); // Small delay for setup time
     
-    // Construct read command: R/W=1, 4-bit address, 11-bit data=0
+    // Construct read command: R/W=1 (bit 15), 4-bit address, 11-bit data=0.
+    // NOTE: previously bit 15 was cleared, which turned every read into a
+    // write of zeros to the addressed register.
     uint16_t read_cmd = 0x8000 | ((reg_address & 0x0F) << 11);
-    read_cmd = 0x0000 | ((reg_address & 0x0F) << 11);
+    drvSpiBegin();
     uint16_t response = SPI.transfer16(read_cmd);
+    drvSpiEnd();
 
-    // uint16_t response = (uint16_t)(res_1 << 8) | res_2;
     // Pull CS high to end communication
-    Serial.print("RAW: ");
-    Serial.print(response, HEX);
-    Serial.println("");
     delayMicroseconds(10); // Small delay for hold time
     digitalWrite(_cs_pin, HIGH);
     // delay(1);
@@ -45,7 +59,9 @@ void DRV8323RSRGZR::writeRegister(uint8_t reg_address, uint16_t data) {
     
     // Construct write command: R/W=0, 4-bit address, 11-bit data
     uint16_t write_cmd = ((reg_address & 0x0F) << 11) | (data & 0x07FF);
+    drvSpiBegin();
     SPI.transfer16(write_cmd);
+    drvSpiEnd();
     
     // Pull CS high to end communication
     digitalWrite(_cs_pin, HIGH);

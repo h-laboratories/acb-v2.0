@@ -1,5 +1,8 @@
 #include "CommandManager.h"
 #include "DRV8323RSRGZR.h"
+#include "cogging.h"
+#include "windowed_encoder.h"
+extern WindowedEncoder encoder;
 #include <SimpleFOC.h>
 #include <math.h>
 
@@ -150,6 +153,44 @@ void CommandManager::parse_human_readable_command(String command) {
         handle_set_max_angle(max_angle);
     } else if (command == "get_absolute_angle_calibration") {
         handle_get_absolute_angle_calibration();
+    } else if (command == "get_encoder_angles") {
+        handle_get_encoder_angles();
+    } else if (command.startsWith("set_velocity_window ")) {
+        // set_velocity_window <min_ms> [max_ms] [min_counts]; min 0 = stock estimator
+        String p = command.substring(20); p.trim();
+        int sp1 = p.indexOf(' '); int sp2 = (sp1 > 0) ? p.indexOf(' ', sp1 + 1) : -1;
+        encoder.window_s = p.substring(0, sp1 > 0 ? sp1 : p.length()).toFloat() * 1e-3f;
+        if (sp1 > 0) encoder.max_window_s = p.substring(sp1 + 1, sp2 > 0 ? sp2 : p.length()).toFloat() * 1e-3f;
+        if (sp2 > 0) encoder.min_counts = p.substring(sp2 + 1).toInt();
+        if (command_mode == 1) {
+            Serial.print("set_velocity_window "); Serial.print(encoder.window_s * 1e3f, 1);
+            Serial.print(" max "); Serial.print(encoder.max_window_s * 1e3f, 1);
+            Serial.print(" min_counts "); Serial.println(encoder.min_counts);
+        }
+    } else if (command == "get_velocity_window") {
+        if (command_mode == 1) {
+            Serial.print("get_velocity_window "); Serial.print(encoder.window_s * 1e3f, 1);
+            Serial.print(" max "); Serial.print(encoder.max_window_s * 1e3f, 1);
+            Serial.print(" min_counts "); Serial.println(encoder.min_counts);
+        }
+    } else if (command.startsWith("set_velocity_lpf ")) {
+        motor_->LPF_velocity.Tf = command.substring(17).toFloat();          // seconds
+        if (command_mode == 1) { Serial.print("set_velocity_lpf "); Serial.println(motor_->LPF_velocity.Tf, 4); }
+    } else if (command == "cog_status") {
+        handle_cog_status();
+    } else if (command == "cog_calib") {
+        if (command_mode == 1) Serial.println(coggingStart(NULL) ? "cog_calib started" : "cog_calib error: motor not aligned or voltage torque mode");
+    } else if (command == "cog_abort") {
+        coggingAbort();
+        if (command_mode == 1) Serial.println("cog_abort ok");
+    } else if (command == "cog_enable") {
+        if (command_mode == 1) Serial.println(coggingSetEnabled(true) ? "cog_enable ok" : "cog_enable error: no valid map");
+    } else if (command == "cog_disable") {
+        coggingSetEnabled(false);
+        if (command_mode == 1) Serial.println("cog_disable ok");
+    } else if (command == "cog_save") {
+        uint8_t st = coggingSave();
+        if (command_mode == 1) { Serial.print("cog_save "); Serial.println(st == 0 ? "ok" : (st == 3 ? "error: no map or motor enabled" : "error: flash")); }
     } else if (command.startsWith("set_absolute_angle_calibration ")) {
         float abs_angle = command.substring(31).toFloat();
         handle_set_absolute_angle_calibration(abs_angle);
@@ -606,7 +647,9 @@ void CommandManager::handle_recalibrate_sensors() {
     float absolute_angle_zero_calibration = encoder_->getAngleRadians();
     float relative_mechanical_position = motor_->sensor->getMechanicalAngle();
     relative_mechanical_position = fmod(relative_mechanical_position, 2*PI);
-    float actual_zero_angle = fmod(((absolute_angle_zero_calibration-relative_mechanical_position) * acb_config.pole_pairs) + motor_->zero_electric_angle, 2*PI);
+    // electrical = dir * pp * mech - zero, so the frame offset between the
+    // absolute (MA730) and incremental encoders must carry the sensor direction.
+    float actual_zero_angle = fmod((acb_config.sensor_direction * (absolute_angle_zero_calibration-relative_mechanical_position) * acb_config.pole_pairs) + motor_->zero_electric_angle, 2*PI);
     
     if (actual_zero_angle < 0) {
         actual_zero_angle += 2*PI;
@@ -999,6 +1042,43 @@ void CommandManager::handle_set_max_angle(float max_angle) {
         Serial.print("set_max_angle ");
         Serial.println(acb_config.max_angle);
     }
+}
+
+// Debug: live absolute (MA730) angle, incremental mechanical angle, and the
+// electrical zero / angle SimpleFOC is using. All in radians.
+void CommandManager::handle_get_encoder_angles() {
+    float abs_angle = encoder_->getAngleRadians();
+    float mech_angle = motor_->sensor->getMechanicalAngle();
+    Serial.print("get_encoder_angles abs ");
+    Serial.print(abs_angle, 4);
+    Serial.print(" mech ");
+    Serial.print(mech_angle, 4);
+    Serial.print(" zero_el ");
+    Serial.print(motor_->zero_electric_angle, 4);
+    Serial.print(" el ");
+    Serial.print(motor_->electrical_angle, 4);
+    Serial.print(" dir ");
+    Serial.println((int)motor_->sensor_direction);
+}
+
+void CommandManager::handle_cog_status() {
+    if (command_mode != 1) return;
+    Serial.print("cog_status state ");
+    Serial.print((int)coggingState());
+    Serial.print(" valid ");
+    Serial.print(coggingValid() ? 1 : 0);
+    Serial.print(" enabled ");
+    Serial.print(coggingEnabled() ? 1 : 0);
+    Serial.print(" saved ");
+    Serial.print(coggingSaved() ? 1 : 0);
+    Serial.print(" index ");
+    Serial.print(coggingIndex());
+    Serial.print(" n ");
+    Serial.print(COG_MAP_N);
+    Serial.print(" timeouts ");
+    Serial.print(coggingTimeouts());
+    Serial.print(" map_angle ");
+    Serial.println(coggingMapAngle(), 4);
 }
 
 void CommandManager::handle_get_absolute_angle_calibration() {

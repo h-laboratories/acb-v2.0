@@ -3,6 +3,9 @@
 #include "MA730GQ.h"
 #include "DRV8323RSRGZR.h"
 #include "CommandManager.h"
+#include "can_boot.h"
+#include "cogging.h"
+#include "windowed_encoder.h"
 #include <SimpleFOC.h>
 #include <SPI.h>
 
@@ -13,7 +16,7 @@ BLDCDriver6PWM driver = BLDCDriver6PWM(PWM_H_A, PWM_L_A, PWM_H_B, PWM_L_B, PWM_H
 LowsideCurrentSense current_sense = LowsideCurrentSense(SHUNT_RESISTANCE, CURRENT_GAIN, CURR_A, CURR_B, CURR_C);
 
 /* ENCODER SETUP */
-Encoder encoder = Encoder(ENCODER_A, ENCODER_B, ENCODER_PPR);
+WindowedEncoder encoder = WindowedEncoder(ENCODER_A, ENCODER_B, ENCODER_PPR);
 
 /* MA730GQ SPI ENCODER SETUP */
 MA730GQ spi_encoder = MA730GQ(MA730GQ_CS_PIN);
@@ -46,6 +49,7 @@ CommandManager command_manager(&motor, &spi_encoder);
 /* BOARD MONITORING VARIABLES */
 float board_temperature = 0.0f;
 float bus_voltage = 0.0f;
+float g_encoderAbsOffset = 0.0f;   // MA730 absolute - incremental mechanical angle at boot (anti-cogging map frame)
 float internal_temperature = 0.0f;
 
 /* CURRENT MONITORING VARIABLES */
@@ -97,13 +101,33 @@ void initSPI() {
   SPI.setClockDivider(SPI_CLOCK_DIV128);  
 }
 
+// SimpleFOC (stm32_mcu.h): one-shot regular conversion that coexists with the
+// injected low-side current-sense conversions.
+float _readRegularADCVoltage(const int pin);
+
+// Set once current_sense.init() has claimed the ADC. From then on the Arduino
+// core's analogRead() must not be used on ADC pins: the STM32 core runs
+// HAL_ADC_Init()/HAL_ADC_DeInit() on every call and wipes the injected setup,
+// which showed up as -20 A phase-current offsets on the bench.
+static bool adc_owned_by_current_sense = false;
+
+static float readAdcVolts(int pin) {
+  if (adc_owned_by_current_sense) {
+    float v = _readRegularADCVoltage(pin);
+    return v < 0.0f ? 0.0f : v;
+  }
+  return (analogRead(pin) / 1023.0f) * 3.3f;
+}
+
 /**
  * Calculate board temperature from NTC thermistor reading
  * @return Temperature in Celsius
  */
 float calculateBoardTemperature() {
-  int adc_value = analogRead(TEMP);
-  float voltage = (adc_value / 1023.0f) * 3.3f;  // Convert ADC to voltage (3.3V reference)
+  // TEMP (PA8) is ADC5-only, a separate clock domain from the ADC1 current
+  // sensing, so the core's analogRead() is safe here (SimpleFOC's regular read
+  // fails for ADC5 on this core).
+  float voltage = (analogRead(TEMP) / 1023.0f) * 3.3f;
   
   // Calculate NTC resistance using voltage divider formula
   float ntc_resistance = (TEMP_R_FIXED * voltage) / (3.3f - voltage);
@@ -120,12 +144,14 @@ float calculateBoardTemperature() {
  * @return Bus voltage in Volts
  */
 float calculateBusVoltage() {
-  int adc_value = analogRead(BUS_V);
-  float voltage = (adc_value / 1023.0f) * 3.3f;  // Convert ADC to voltage (3.3V reference)
+  // TODO: PB15 bus sense reads ADC full scale on the bench board (2026-09-08);
+  // hard-coded to the measured supply (20 V bench PSU) until the divider is checked.
+  return 20.0f;
+  float voltage = readAdcVolts(BUS_V);
   
   // Calculate actual bus voltage using voltage divider formula
   float actual_voltage = voltage / BUS_VOLTAGE_DIVIDER;
-  
+
   return actual_voltage;
 }
 
@@ -135,6 +161,9 @@ float calculateBusVoltage() {
  * @return Internal temperature in Celsius
  */
 float calculateInternalTemperature() {
+  // ATEMP/AVREF are internal ADC1 channels; analogRead() on them tears down the
+  // current-sense ADC (see readAdcVolts). Only read them before FOC init.
+  if (adc_owned_by_current_sense) return internal_temperature;
   uint16_t raw_temp = analogRead(ATEMP);  // Internal temperature sensor
   uint16_t raw_vref = analogRead(AVREF);  // Internal VREFINT (1.212V typ)
   
@@ -207,7 +236,9 @@ void setup() {
   // Setups + loads
   initSPI();
   IOSetup();
+  canBootInit();   // CAN bootloader hook: answers PING / ENTER so the board can be reflashed over CAN
   loadConfig();
+  coggingLoad();
 
   spi_encoder.init();
   drv8323.init();
@@ -221,7 +252,8 @@ void setup() {
     Serial.print(bus_voltage,2);
     Serial.println("v)");
     Serial.println("Please use an input voltage to 12v-30v");
-    exit(1);
+    // Stay reachable over CAN so the board can still be reset or reprogrammed.
+    while (true) { canBootPoll(); delay(10); }
   }
     
   
@@ -257,7 +289,7 @@ void setup() {
   motor.torque_controller = TorqueControlType::foc_current;
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   
-  motor.LPF_velocity = 0.05;
+  motor.LPF_velocity = 0.01;   // windowed encoder estimator is already smooth; keep loop delay low
   motor.LPF_angle = 0.05;
   motor.LPF_current_d = 0.05;
   motor.LPF_current_q = 0.05;
@@ -299,6 +331,7 @@ void setup() {
   delay(10);
   
   current_sense.init();
+  adc_owned_by_current_sense = true;
   current_sense.skip_align = true; // This stops sstartup movement, but the encoder.update() in theory should be fine if align enabled.
   motor.linkCurrentSense(&current_sense);
 
@@ -312,10 +345,13 @@ void setup() {
   
   motor.controller = MotionControlType::velocity;
   motor.target = 0;
-  motor.LPF_velocity = 0.05;
+  motor.LPF_velocity = 0.01;   // windowed encoder estimator is already smooth; keep loop delay low
   motor.LPF_angle = 0.05;
   
-  float zero_electric_calibrated = acb_config.zero_electric_angle-((current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
+  // Inverse of the save formula in CommandManager::handle_recalibrate_sensors():
+  // electrical = dir * pp * mech - zero, so the encoder frame offset carries dir.
+  g_encoderAbsOffset = current_absolute_angle - current_relative_angle;
+  float zero_electric_calibrated = acb_config.zero_electric_angle-(acb_config.sensor_direction * (current_absolute_angle-current_relative_angle) * acb_config.pole_pairs);
   zero_electric_calibrated = fmod(zero_electric_calibrated, 2 * PI);
   
   if(zero_electric_calibrated < 0) {
@@ -339,6 +375,10 @@ void loop() {
   // float loop_start_time = micros();
   command_manager.process_serial_commands();
 
+  // CAN bootloader hook (PING / ENTER / reset)
+  canBootPoll();
+  canControlLoop();
+
   // Check angle limits and switch to position mode if exceeded
   check_angle_limits();
 
@@ -357,5 +397,7 @@ void loop() {
   /* TODO: Handle driver faults */
   
   motor.loopFOC();
+  coggingUpdate();   // anti-cogging calibration state machine (no-op unless calibrating)
   motor.move();
+  coggingApply();    // anti-cogging feed-forward on the current setpoint
 }
