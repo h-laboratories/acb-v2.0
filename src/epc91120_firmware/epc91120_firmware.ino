@@ -50,8 +50,8 @@
 #define ENCODER_PPR        1024
 #define ISNS_MV_PER_A      26.4f
 #define VDC_GAIN           0.04489f  // V per V
-#define PWM_HZ             40000
-#define DEAD_ZONE          0.004f    // fraction of the PWM period: 100 ns at 40 kHz (EPC23102 needs ~50 ns)
+#define PWM_HZ             100000
+#define DEAD_ZONE          0.005f    // fraction of the PWM period: 50 ns at 100 kHz, same as the EPC factory firmware
 #define DEFAULT_CURRENT_LIMIT 2.0f   // A; bench PSU budget
 #define ALIGN_VOLTAGE      0.5f      // ~2 A into a 0.26 R winding during initFOC alignment
 
@@ -90,7 +90,6 @@ void onEncoder(char* cmd) {
   (void)cmd;
   uint8_t st = spi_encoder.readRegister(0x1B);
   SerialVcp.print(F("abs ")); SerialVcp.print(spi_encoder.getAngleRadians(), 4);
-  SerialVcp.print(F(" abz ")); SerialVcp.print(encoder.getMechanicalAngle(), 4);
   SerialVcp.print(F(" shaft ")); SerialVcp.print(motor.shaft_angle, 4);
   SerialVcp.print(F(" vel ")); SerialVcp.print(motor.shaft_velocity, 3);
   SerialVcp.print(F(" MGH ")); SerialVcp.print((st >> 7) & 1);
@@ -154,9 +153,9 @@ void setup() {
   SerialVcp.print(F("MA732 abs ")); SerialVcp.print(spi_encoder.getAngleRadians(), 4);
   SerialVcp.print(F(" rad  MGH ")); SerialVcp.print((st >> 7) & 1); SerialVcp.print(F(" MGL ")); SerialVcp.println((st >> 6) & 1);
 
-  encoder.quadrature = Quadrature::ON;          // A/B kept only as a reference reading (E command)
-  encoder.init();
-  encoder.enableInterrupts(doA, doB, doZ);
+  // The MA732 A/B/Z pulses are not used: their interrupts cost ~10 kHz of loop rate at 2500 rpm and they
+  // pick up switching noise. FOC runs from the SPI angle. Pins stay as inputs.
+  pinMode(PIN_ENC_A, INPUT); pinMode(PIN_ENC_B, INPUT); pinMode(PIN_ENC_Z, INPUT);
   spi_sensor.init();
   motor.linkSensor(&spi_sensor);
 
@@ -185,7 +184,6 @@ void setup() {
 
   if (!current_sense.init()) { SerialVcp.println(F("current sense init failed")); }
   current_sense.skip_align = false;      // let SimpleFOC verify sensor/phase pairing on this new board
-  encoder.update();
   motor.linkCurrentSense(&current_sense);
 
   motor.disable();                               // no boot-time alignment: send A when the motor is free to move
