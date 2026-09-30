@@ -21,7 +21,32 @@ class SpiAngleSensor : public Sensor {
 
   void init() override { Sensor::init(); }
 
-  float getSensorAngle() override { return enc_->getAngleRadians(); }   // [0, 2pi)
+  uint32_t glitches = 0;                        // rejected SPI samples (see getSensorAngle)
+  float    glitch_thr = 0.3f;                   // rad per loop; 300 rad/s * 70 us = 0.02 rad, so 0.3 is far outside real motion
+
+  // MA732 frames carry no CRC: a corrupted read puts the electrical angle anywhere for one loop, which
+  // with 11 pole pairs is a full-torque kick. Reject implausible jumps and substitute the prediction.
+  float getSensorAngle() override {
+    const uint32_t now = _micros();
+    float raw = enc_->getAngleRadians();
+    if (have_last_) {
+      const float dt = (float)(uint32_t)(now - last_us_) * 1e-6f;
+      float pred = last_raw_ + v_slow_ * dt;
+      while (pred >= _2PI) pred -= _2PI;
+      while (pred < 0) pred += _2PI;
+      float d = raw - pred;
+      while (d > _PI) d -= _2PI;
+      while (d < -_PI) d += _2PI;
+      if (fabsf(d) > glitch_thr && consecutive_ < 3) {   // after 3 in a row, believe the sensor (real jump)
+        glitches++; consecutive_++;
+        raw = pred;
+      } else {
+        consecutive_ = 0;
+      }
+    }
+    last_raw_ = raw; last_us_ = now; have_last_ = true;
+    return raw;
+  }
 
   float getVelocity() override {
     const uint32_t now = _micros();
@@ -58,5 +83,6 @@ class SpiAngleSensor : public Sensor {
   uint32_t t_[kCap];
   int head_ = 0, n_ = 0;
   float v_slow_ = 0.0f;
+  float last_raw_ = 0.0f; uint32_t last_us_ = 0; bool have_last_ = false; int consecutive_ = 0;
   void push(float a, uint32_t t) { head_ = (head_ + 1) % kCap; a_[head_] = a; t_[head_] = t; if (n_ < kCap) n_++; }
 };

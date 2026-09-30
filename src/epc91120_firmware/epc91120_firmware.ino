@@ -74,6 +74,9 @@ void doZ() { encoder.handleIndex(); }
 
 static float bus_voltage = 0.0f;
 static bool  oc_trip_enabled = true;
+static float target_ramp = 200.0f;      // rad/s^2 slew limit on velocity targets (0 = off); softens speed steps
+static float target_slewed = 0.0f;
+static uint32_t slew_us = 0;
 static bool  oc_tripped = false;
 static uint32_t loop_count = 0, loop_stamp = 0; static float loop_hz = 0.0f;
 
@@ -112,6 +115,7 @@ void onStatus(char* cmd) {
   SerialVcp.print(F(" ilimit ")); SerialVcp.print(motor.current_limit, 2);
   SerialVcp.print(F(" oc_pin ")); SerialVcp.print(digitalRead(PIN_OCDN));
   SerialVcp.print(F(" oc_tripped ")); SerialVcp.print(oc_tripped);
+  SerialVcp.print(F(" spi_glitches ")); SerialVcp.print(spi_sensor.glitches);
   SerialVcp.print(F(" loop_hz ")); SerialVcp.println(loop_hz, 0);
 }
 void onAlign(char* cmd) {
@@ -126,6 +130,9 @@ void onAlign(char* cmd) {
   SerialVcp.print(F(" zero_el ")); SerialVcp.println(motor.zero_electric_angle, 4);
 }
 void onOcTrip(char* cmd) { oc_trip_enabled = (cmd[0] != '0'); oc_tripped = false; SerialVcp.print(F("oc trip ")); SerialVcp.println(oc_trip_enabled); }
+static uint8_t stream_hz = 0;
+void onStream(char* cmd) { stream_hz = (uint8_t)atoi(cmd); SerialVcp.print(F("stream hz ")); SerialVcp.println(stream_hz); }
+void onRamp(char* cmd) { target_ramp = atof(cmd); SerialVcp.print(F("target ramp rad/s^2 ")); SerialVcp.println(target_ramp, 1); }
 void onWindow(char* cmd) {
   float ms = atof(cmd); if (ms >= 0) spi_sensor.window_s = ms * 1e-3f;
   SerialVcp.print(F("velocity window ms ")); SerialVcp.println(spi_sensor.window_s * 1e3f, 1);
@@ -179,7 +186,9 @@ void setup() {
   motor.PID_velocity.P = 0.8f; motor.PID_velocity.I = 20.0f; motor.PID_velocity.D = 0;
   motor.LPF_velocity.Tf = 0.01f;
   motor.P_angle.P = 20.0f;
-  motor.velocity_limit = 400.0f;
+  // Voltage ceiling: Ke ~13 mV.s/rad, so at bus/2 phase amplitude the loop runs out of voltage near
+  // 0.8*(bus/2)/Ke. Clamp velocity targets below that (MLV to change).
+  motor.velocity_limit = 0.8f * driver.voltage_limit / 0.013f * 0.6f;    // 15 V bus -> ~277 rad/s; measured ceiling with Uq pinned is ~300
   motor.init();
 
   if (!current_sense.init()) { SerialVcp.println(F("current sense init failed")); }
@@ -195,6 +204,8 @@ void setup() {
   command.add('A', onAlign, "re-align sensor");
   command.add('O', onOcTrip, "over-current trip 0/1");
   command.add('W', onWindow, "velocity window ms");
+  command.add('T', onStream, "stream t,angle,vel,iq,uq at hz (0 off)");
+  command.add('R', onRamp, "velocity target ramp rad/s^2 (0 off)");
   command.verbose = VerboseMode::user_friendly;
   SerialVcp.println(F("ready: A align (moves), ME1 enable, M<rad/s> target, S status, E encoder, M? help"));
   loop_stamp = millis();
@@ -209,6 +220,29 @@ void loop() {
     SerialVcp.println(F("!! over-current (OCDn low): motor disabled"));
   }
   motor.loopFOC();
-  motor.move();
+  if (motor.controller == MotionControlType::velocity) {
+    // The Commander writes motor.target. Detect a new command (target differs from what we last wrote),
+    // clamp it to the voltage ceiling, and slew-limit toward it so speed changes ramp instead of stepping.
+    static float cmd_target = 0.0f, written = 0.0f;
+    if (motor.target != written) cmd_target = _constrain(motor.target, -motor.velocity_limit, motor.velocity_limit);
+    const uint32_t now = _micros(); const float dt = (float)(uint32_t)(now - slew_us) * 1e-6f; slew_us = now;
+    if (target_ramp > 0.0f && dt < 0.1f) {
+      const float step = target_ramp * dt;
+      target_slewed = _constrain(cmd_target, target_slewed - step, target_slewed + step);
+    } else target_slewed = cmd_target;
+    motor.move(target_slewed);
+    written = motor.target;          // move() stored target_slewed in motor.target
+  } else {
+    motor.move();
+  }
   command.run();
+  if (stream_hz) {
+    static uint32_t last = 0;
+    if (millis() - last >= 1000u / stream_hz) {
+      last = millis();
+      SerialVcp.print(last); SerialVcp.print(','); SerialVcp.print(motor.shaft_angle, 4); SerialVcp.print(',');
+      SerialVcp.print(motor.shaft_velocity, 3); SerialVcp.print(','); SerialVcp.print(motor.current.q, 3); SerialVcp.print(',');
+      SerialVcp.print(motor.voltage.q, 3); SerialVcp.print(','); SerialVcp.println(spi_sensor.glitches);
+    }
+  }
 }
